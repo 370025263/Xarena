@@ -1,0 +1,6 @@
+这里只是一个demo，是之前rag项目的，很明显并不适合目前的skill评测；
+你需做略微调整；
+你可以copy多份，然后引入skillopt train、trace2skilltrain和xskilltrain进来；
+然后data部分你可以把train val数据放进去，这里不要包含test数据；
+这里的downwheel和代理是之前内网用的，因为我们不想每次都去线上重新下载；
+

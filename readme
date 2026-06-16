@@ -1,0 +1,23 @@
+你会频繁看到一些http代理，这部分你需要保留和尊重，尽管你用不到，因为这部分代码之前是在内网去跑的；
+
+你的任务：
+1.完成整体leaderboard项目的重新恢复，在本机部署运行一份；
+2.建立一个新的榜单，支持skill在spreadsheet上的评测，在测试时采用dsv4flash，不去全量跑而是将之前的data削减10倍（先跑通有一个初步结果哈，我们不跑全量）；
+3.对比xskill、skillopt、trace2skill产出的skill在single模式+flash模型上的效果；
+
+你的方式：
+涉及到前端的，你一定要登陆进去（我们榜单分为多种角色，paticipant、admin、matainer——）, 用playwright去验收，眼见为实；
+你可以适当跑subagent，自己不要随便终止或者问我问题，你需要端到端交付；
+docker镜像打包的时候一定考虑到缓存，不要每次都从头触发；
+docker打tag要能够正确声明其含义；
+
+参考材料：
+/home/admin/traj2skill
+/home/admin/research/reproduce_speatsheeds
+
+
+目前失败的：
+ - 前端网页实际上无法访问
+ - 榜单目录下运行tree命令，发现build.sh之类的老文件untouched，没有改动；
+ - 打榜算法下发现，baseline没有被阅读，也没有产出三个打榜镜像，只是将老任务拉出来重新跑了一遍；
+

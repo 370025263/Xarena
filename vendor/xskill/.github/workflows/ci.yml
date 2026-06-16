@@ -1,0 +1,199 @@
+# CI workflow — see docs/dev-plan/ci-workflow-draft.yml and docs/dev-plan/testing-strategy.md
+#
+# Phase status:
+#   P1            — ut-it (3 OS × 2 py) + verify-build live.
+#   P2/P3         — Codex / OpenCode adapters add tests but don't change this file.
+#   P4 (this PR)  — smoke-e2e body filled: install codex/opencode CLI (real npm)
+#                   + run `pytest tests/e2e/test_smoke.py -k <agent>`.
+#                   real-llm-e2e / live-agent-e2e jobs gated on
+#                   ``secrets.DEEPSEEK_API_KEY`` presence; if secret missing
+#                   they emit a warning and skip gracefully (so forks without
+#                   secrets don't break the run).
+#
+# Trigger matrix:
+#   pull_request                  → ut-it + verify-build + smoke-e2e
+#   push to main                  → same + real-llm-e2e (graceful skip without secret)
+#   workflow_dispatch / schedule  → also live-agent-e2e (graceful skip without secret)
+
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+  schedule:
+    - cron: '0 16 * * *'  # nightly UTC 16:00
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  ut-it:
+    name: ut+it (${{ matrix.os }}, py${{ matrix.python-version }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        python-version: ["3.9", "3.10", "3.11", "3.12"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+      - name: Normalize line endings on Windows
+        if: runner.os == 'Windows'
+        run: git config --global core.autocrlf input
+      - name: Install package with dev extras
+        run: pip install -e .[dev]
+      - name: Run UT + IT
+        # Excludes tests under tests/e2e/ (covered by smoke-e2e job in P4).
+        run: pytest tests/ --ignore=tests/e2e -q
+
+  smoke-e2e:
+    name: smoke-e2e (${{ matrix.os }}, ${{ matrix.agent }})
+    needs: ut-it
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        agent: [claude_code, codex, opencode]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - name: Normalize line endings on Windows
+        if: runner.os == 'Windows'
+        run: git config --global core.autocrlf input
+      - name: Install xskill (with dev extras)
+        run: pip install -e .[dev]
+      - name: Install agent CLI (codex / opencode)
+        if: matrix.agent != 'claude_code'
+        shell: bash
+        run: |
+          if [ "${{ matrix.agent }}" = "codex" ]; then
+            npm i -g @openai/codex
+            codex --version
+          elif [ "${{ matrix.agent }}" = "opencode" ]; then
+            npm i -g opencode-ai@latest
+            opencode --version
+          fi
+      - name: Smoke E2E (stub LLM + fixture, no network)
+        run: pytest tests/e2e/test_smoke.py -v -k "${{ matrix.agent }}"
+
+  real-llm-e2e:
+    name: real-llm-e2e (linux)
+    if: github.event_name != 'pull_request'
+    needs: smoke-e2e
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - name: Check DeepSeek secret presence
+        id: secret_check
+        env:
+          DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
+        run: |
+          if [ -n "${DEEPSEEK_API_KEY:-}" ]; then
+            echo "have_secret=1" >> "$GITHUB_OUTPUT"
+          else
+            echo "have_secret=0" >> "$GITHUB_OUTPUT"
+            echo "::warning::DEEPSEEK_API_KEY secret missing — real-llm-e2e will be skipped"
+          fi
+      - name: Install xskill (with dev extras)
+        if: steps.secret_check.outputs.have_secret == '1'
+        run: pip install -e .[dev]
+      - name: Real-LLM E2E (DeepSeek)
+        if: steps.secret_check.outputs.have_secret == '1'
+        env:
+          DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
+          OPENAI_BASE_URL: https://api.deepseek.com
+          OPENAI_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
+          XSKILL_REAL_LLM_E2E: "1"
+        run: |
+          # The real-llm-e2e suite drives task / cluster / edit agents against a
+          # real DeepSeek endpoint via OpenAI-compat base_url. Tests live under
+          # ``tests/live/`` and self-gate on ``XSKILL_REAL_LLM_E2E`` env.
+          if [ -d tests/live ]; then
+            pytest tests/live -v -m "real_llm" --timeout=300 || exit_code=$?
+            # continue-on-error at job level lets PRs surface failures without
+            # blocking merge to main on transient API errors.
+            exit ${exit_code:-0}
+          else
+            echo "::notice::tests/live/ not present yet — real-llm-e2e is a no-op stub"
+          fi
+      - name: Graceful skip notice
+        if: steps.secret_check.outputs.have_secret != '1'
+        run: echo "DEEPSEEK_API_KEY secret missing — real-llm-e2e skipped (no failure)"
+
+  live-agent-e2e:
+    # **mock LLM** drives real codex/opencode processes — no secret needed.
+    # Runs on every PR across 3 OS × 2 agent matrix.
+    name: live-agent-e2e (${{ matrix.os }}, ${{ matrix.agent }})
+    needs: smoke-e2e
+    runs-on: ${{ matrix.os }}
+    continue-on-error: true
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        agent: [codex, opencode]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - name: Install xskill (with dev extras)
+        run: pip install -e .[dev]
+      - name: Install codex CLI
+        if: matrix.agent == 'codex'
+        shell: bash
+        run: |
+          npm i -g @openai/codex
+          codex --version
+      - name: Install opencode CLI
+        if: matrix.agent == 'opencode'
+        shell: bash
+        run: |
+          npm i -g opencode-ai@latest
+          opencode --version
+      - name: Live-agent E2E (real ${{ matrix.agent }} + mock LLM)
+        shell: bash
+        run: |
+          # tests/live/* spin up an in-process mock LLM server, point codex /
+          # opencode at it, spawn the real CLI for one short turn, then verify
+          # xskill ingester picks up the resulting JSONL / SQLite session.
+          # No external LLM API key required — fully offline E2E.
+          pytest tests/live/test_${{ matrix.agent }}_live.py -v \
+            --override-ini="addopts=" \
+            -m live_agent --timeout=300
+
+  verify-build:
+    name: verify-build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - name: Install build tools
+        run: pip install build twine
+      - name: Build sdist and wheel
+        run: python -m build
+      - name: Twine check
+        run: twine check dist/*

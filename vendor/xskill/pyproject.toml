@@ -1,0 +1,88 @@
+[build-system]
+requires = ["setuptools>=68.0", "setuptools-scm>=8"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "xskill"
+dynamic = ["version"]
+description = "Distill reusable Skills from AI Agent execution trajectories"
+readme = "README.md"
+requires-python = ">=3.9"
+license = { text = "MIT" }
+authors = [{ name = "SkillNerds", email = "370025263@qq.com" }]
+keywords = ["agent", "skill", "trajectory", "llm", "rag", "self-evolving"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Operating System :: POSIX :: Linux",
+    "Operating System :: MacOS",
+    "Operating System :: Microsoft :: Windows",
+    "Programming Language :: Python :: 3 :: Only",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+]
+dependencies = [
+    "pyyaml>=6.0",
+    "numpy>=1.24",
+    "openai>=1.0",
+    "agno",
+    "tqdm",
+    "httpx",
+    "fastapi",
+    "uvicorn",
+    "sse-starlette",
+    "rank-bm25>=0.2",
+    # team 模式上传前的轨迹脱敏（team/client/redact.py）。脱敏是上传链路的
+    # 强制环节，故列为主依赖而非 optional extra——缺库就该 import 失败。
+    "detect-secrets>=1.5",
+    # 纯 Python git 实现，替代系统 ``git`` 二进制——容器/受限环境（如
+    # ``python:3.9-slim``）默认没装 git，SkillEditAgent 等链路又要跑 git
+    # init/commit/branch；走 dulwich 后零依赖系统 git。
+    "dulwich>=0.21",
+    # Python 3.9 上 pydantic 需要它来求值 `X | Y` 联合注解（PEP 604 语法
+    # 3.10 才原生支持）；3.10+ 不安装。
+    "eval_type_backport; python_version < '3.10'",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=7", "pytest-timeout>=2", "pytest-asyncio>=0.21", "requests>=2"]
+
+[project.urls]
+Homepage = "https://github.com/SkillNerds/xskill"
+Repository = "https://github.com/SkillNerds/xskill"
+Issues = "https://github.com/SkillNerds/xskill/issues"
+
+[project.scripts]
+xskill = "xskill.cli:main"
+
+[tool.setuptools]
+include-package-data = true
+
+[tool.setuptools.package-data]
+xskill = [
+    "data/*.json",            # vendored 价格表(Issue #43),随 wheel 发布
+    "dashboard/static/*",     # 看板前端壳(index.html / app.js),随 wheel 发布
+]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools_scm]
+version_file = "src/xskill/_version.py"
+fallback_version = "0.0.0+unknown"
+
+[tool.pytest.ini_options]
+markers = [
+    # ``live_agent`` 标记的测试会真 spawn codex/opencode 子进程对接 mock LLM
+    # server，验证端到端流程通——不调真 LLM API。默认排除（``addopts`` 含
+    # ``--ignore=tests/live``）；CI live-agent-e2e job + 本地手动跑用
+    # ``pytest -m live_agent`` 触发。
+    "live_agent: real codex/opencode process + mock LLM end-to-end (slow, optional)",
+]
+addopts = "--ignore=tests/live"
+asyncio_mode = "strict"

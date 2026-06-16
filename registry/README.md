@@ -1,0 +1,2 @@
+这里应该包含拉起一个registry所需的相关脚本，在集群5000端口上，开放给localhost用；
+支持localfs

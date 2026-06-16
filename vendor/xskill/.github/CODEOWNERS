@@ -1,0 +1,38 @@
+# CODEOWNERS — maps each area to its owner.
+#
+# GitHub auto-requests review from the owner when a PR touches matching paths,
+# and the owner is the default assignee for issues labelled with that area.
+#
+# TODO(maintainers): replace each @TODO-* placeholder with a real GitHub
+# username (or team) before going public. Until then these lines are inert.
+#
+# The 6 areas mirror the bug-triage responsibility split in CONTRIBUTING.md.
+
+# ── Area: ecosystem adapters (trajectory ingest) ──────────────────
+/src/xskill/adapters.py            @TODO-ecosystems-owner
+/src/xskill/ecosystems.py          @TODO-ecosystems-owner
+
+# ── Area: skill generation pipeline ───────────────────────────────
+/src/xskill/task_agent.py          @TODO-pipeline-owner
+/src/xskill/task_cluster_agent.py  @TODO-pipeline-owner
+/src/xskill/skill_edit_agent.py    @TODO-pipeline-owner
+/src/xskill/candidates.py          @TODO-pipeline-owner
+/src/xskill/atom_task.py           @TODO-pipeline-owner
+
+# ── Area: canary / gradual rollout ────────────────────────────────
+/src/xskill/canary.py              @TODO-canary-owner
+/src/xskill/atom_canary.py         @TODO-canary-owner
+/src/xskill/ux_score.py            @TODO-canary-owner
+
+# ── Area: install / user-edit absorb ──────────────────────────────
+/src/xskill/install_fallback.py        @TODO-install-owner
+/src/xskill/install_history.py         @TODO-install-owner
+/src/xskill/user_edit_absorb_agent.py  @TODO-install-owner
+
+# ── Area: team C/S ────────────────────────────────────────────────
+/src/xskill/team/                  @TODO-team-owner
+
+# ── Area: server / daemon ─────────────────────────────────────────
+/src/xskill/server.py              @TODO-server-owner
+/src/xskill/watcher.py             @TODO-server-owner
+/src/xskill/registry.py            @TODO-server-owner

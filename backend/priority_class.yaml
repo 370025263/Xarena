@@ -1,0 +1,12 @@
+
+apiVersion: scheduling.k8s.io/v1
+kind: PriorityClass
+metadata:
+  name: leaderboard-job-priority
+# value 可以是 1 到 1,000,000,000 之间的任意整数
+# 我们给它一个很高的值，比如 100 万
+# 只要这个值 > 0 (model-engine Pod 的默认值)，抢占就会发生
+value: 1000000
+globalDefault: false
+description: "High priority for leaderboard evaluation jobs to enable preemption."
+

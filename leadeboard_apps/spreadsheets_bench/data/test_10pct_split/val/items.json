@@ -1,0 +1,304 @@
+[
+  {
+    "id": 45635,
+    "instruction": "I need a formula for an Excel sheet that assigns a score of 6, 3, 2, or 0 in rows 5, 6, and 7 across columns B, C, D, and E. The score should be based on the highest total scores from the top three rows. Specifically, if one person has the highest score alone, they receive the full 6 points. If the highest score is tied between two people, they both receive 3 points each. If all three share the highest score, they each get 2 points. Anyone without the highest score gets 0 points. The columns each represent 6 points.",
+    "spreadsheet_path": "spreadsheet/45635",
+    "instruction_type": "Cell-Level Manipulation",
+    "answer_position": "B5:E7"
+  },
+  {
+    "id": "560-12",
+    "instruction": "How can I efficiently count the quantity of each item from a table that sometimes contains over ten thousand rows of data? I have previously used the subtotal formula, but it is time-consuming, especially when dealing with over a hundred items.The answer should be put from I3 with the Headers \"ITEM\" (from column B) and \"Qty\" (count). Sort the \"ITEM\" column from first to last in the order: A006, A004, A005 and calculate the corresponding count in the adjacent columns. Left align entire answer range with no other formatting applied",
+    "spreadsheet_path": "spreadsheet/560-12",
+    "instruction_type": "Sheet-Level Manipulation",
+    "answer_position": "'工作表1'!I2:J7",
+    "answer_sheet": "工作表1",
+    "data_position": "A1:D10"
+  },
+  {
+    "id": 55049,
+    "instruction": "How can I create a formula in Excel that allows me to sum values across three columns based on a single criterion? I've attempted to use SUMPRODUCT with the formula =SUMPRODUCT(book2!A:A=book1!A3)*book2!H:J, but it seems like there might be a mistake because it isn't functioning as expected. SUMIF does not seem to be an option since the sum range spans multiple columns. What would be the correct formula to achieve this result?\nMy current formula is:SUMPRODUCT(book2!A:A=book1!A3)*book2!H:J",
+    "spreadsheet_path": "spreadsheet/55049",
+    "instruction_type": "Cell-Level Manipulation",
+    "answer_position": "'book1'!B3:B23"
+  },
+  {
+    "id": 9569,
+    "instruction": "I need a formula to identify the earliest non-zero value entered for each row, specifically within column 'AO,' from a range of months (e.g., from Jan 2015 onward). The workbook I'm working on will be updated monthly with new data, and the values are percentages such as 17.07% for contract #10007 in Mar-2015. It is important that the formula avoids using array formulas to prevent the workbook from freezing due to a potentially long list of data.\nI am struggling to find a formula that I could use in order to find the EARLIEST value entered from several months. Attached is a workbook that will be populated each month and will potentially have values from Jan 2015 through whatever the latest month would be........for each row, I need to pick the earliest value entered on column \"AO\". As an example on 1st row, the earliest value for contract # 10007 is 17.07% entered in Mar-2015, contract 10008 would 18.20% entered in Jun 2015, etc..Since this list will be long, it would be preferable to have a formula that does not use array formulas as I find that this type of formula typically freezes the workbook. Need to enter a formula that captures the earliest value entered from any given time period without manually entering value in each row.",
+    "spreadsheet_path": "spreadsheet/9569",
+    "instruction_type": "Cell-Level Manipulation",
+    "answer_position": "AO9:AO1288"
+  },
+  {
+    "id": 7902,
+    "instruction": "I need assistance with constructing a formula in my worksheet. I want to compare two values in a row, and based on that comparison, the formula should either return the equivalent value from the same row if it is present or perform a regular VLOOKUP. The specific use case and data structure are outlined in the attached worksheet.\nVLOOKUP(C3,Grouping!$A$2:$I$7,3,FALSE)",
+    "spreadsheet_path": "spreadsheet/7902",
+    "instruction_type": "Cell-Level Manipulation",
+    "answer_position": "'Formula Required'!D3:J6"
+  },
+  {
+    "id": "227-40",
+    "instruction": "How can I remove or replace text duplicates within the same row in Excel, as most of the available methods only apply to columns? I have provided the sheet showing the issue I am facing with duplicates in consecutive columns where the expected result is shown in 'The Result I'm after' section. Place the output in A14:E17.",
+    "spreadsheet_path": "spreadsheet/227-40",
+    "instruction_type": "Sheet-Level Manipulation",
+    "answer_position": "'Sheet1'!A14:E17",
+    "answer_sheet": "Sheet1",
+    "data_position": "A1:E12"
+  },
+  {
+    "id": "463-17",
+    "instruction": "I have a list of company names in column A and their respective counts in column B of an Excel sheet. I need to generate a list where each company name from column A is repeated based on the number indicated in column B next to it. Place the resulting list of company names into column D where it has been started.",
+    "spreadsheet_path": "spreadsheet/463-17",
+    "instruction_type": "Sheet-Level Manipulation",
+    "answer_position": "'Sheet1'!D2:D46",
+    "answer_sheet": "Sheet1",
+    "data_position": "A1:B5"
+  },
+  {
+    "id": 54144,
+    "instruction": "How can I create an Excel 365 formula to sum the quantities of trucks listed on the 'Data' Sheet when the truck names are concatenated on the 'Report' Sheet, but they are listed separately on the 'Data' Sheet?     Could you help me in my question ,please?\nI need a formula to sum trucks quantities from \"Data\"Sheet but the problem is that the Trucks here are concatenated and in Data\" Sheet Trucks are not concatenated\nPlease help me",
+    "spreadsheet_path": "spreadsheet/54144",
+    "instruction_type": "Cell-Level Manipulation",
+    "answer_position": "'Report'!D3:D10"
+  },
+  {
+    "id": "80-42",
+    "instruction": "How can I consolidate all rows of data from all other sheets in the workbook (currently, Jack, Henry, and Richard sheets) into the first available, blank rows of A:L in sheet Consolidated_ALL, and ensure that each row of consolidated data has an indication of the originating sheet name in Column L?  The columns to use from the other sheets are highlighted yellow.  Match the cell formatting and data layout of other rows in the sheet.  Do not include column headers or fill colors in this consolidation.  Additionally, how can I adapt the VBA code provided to either increase or decrease the number of columns it operates with based on my requirements?",
+    "spreadsheet_path": "spreadsheet/80-42",
+    "instruction_type": "Sheet-Level Manipulation",
+    "answer_position": "'Consolidate_ALL'!A2:L8000",
+    "answer_sheet": "Consolidate_ALL",
+    "data_position": "Consolidate_ALL!'A1:L3999,'Jack!'A1:R2000,'Henry!'A1:R1000,'Richard!'A1:R1001"
+  },
+  {
+    "id": 2768,
+    "instruction": "In an Excel report concerning outstanding orders, I am looking for a formula that will allow me to assign available inventory stock to specific order lines on a sheet, prioritizing the allocation based on the Order No. Each Order No is associated with a customer's model, indicated by a suffix (such as A or B), and common items like 'Screw' can appear under different Order Nos. The allocation should reflect a quantity of 0 if there is no stock to fulfill an order line. Additionally, I have a complication where Order Line data is not present in Sheet 2, yet multiple lines may exist for the same Order ID on Sheet 1, each with varying requested delivery dates and the same item. How can I create such a formula?\nPopulate list formula under Expected outcome to allocate available incoming stock from my inventory in \"Sheet2\" to specific order No. in \"Sheet1\".\nThe condition of allocation of stock are based on :\n\n\"Screw\" is a common part used across Model A,B,C. There are 70 pcs stock available under Order No. 1001-A. I would like to allocate the 70 pcs stock based on FIFO order (earliest issued date).\nAvailable stock under Order No. 1006-B is 120 pcs. For this case, i would like to fulfil the first line with 100 pcs followed by balance 20 pcs under the second line.\nIf there is no stock, the result will return \"0\". Example:\nSheet 1-\nA1 B1 C1 D1 E1 F1\nOrder No Order Line Req del date Item Order Qty Result\n1001/A 1 15-May-20 Screw 20 20\n1001/A 2 01-Jun-20 Screw 50 50\n1001/A 3 05-Jun-20 Screw 10 0\n1002/A 1 15-Jun-20 Resistor 10 5\n1003/A 1 01-Jul-20 Capacitor 5 0\n1004/B 1 15-Jul-20 LED 3 3\n1005/A 1 05-Jun-20 Resistor 6 6\n1006/B 1 05-Jun-20 Screw 4 2\n\nSheet 2 -\nA1 B1 C1\nOrder No Part Incoming Qty\n1001/A Screw 20\n1002/A Resistor 5\n1004/A LED 3\n1005/A Resistor 6\n1001/A Screw 50\n1006/B Screw 2",
+    "spreadsheet_path": "spreadsheet/2768",
+    "instruction_type": "Cell-Level Manipulation",
+    "answer_position": "'Sheet1'!H2:H18"
+  },
+  {
+    "id": 37456,
+    "instruction": "I need to calculate daily product sales using a custom 24-hour window that runs from 6:00 AM of the current date to 5:59:59 AM of the next date. The formula must:\nDynamically reference the product from the header so it can be copied across columns without editing.\nUse the next row’s date as the end boundary for each window.\nCalculate each day’s sales using a cumulative subtraction method (sum through the end of the window minus sales beyond it).\nOnly run when a next date exists—if the current row is the last date in the dataset, the formula should not calculate.\nOnce done change the formatting of cells G12:J15 from accounting to currency.",
+    "spreadsheet_path": "spreadsheet/37456",
+    "instruction_type": "Cell-Level Manipulation",
+    "answer_position": "G12:J15"
+  },
+  {
+    "id": 12864,
+    "instruction": "I am attempting to use the Index/Match function combination to retrieve corresponding dates from Column B on sheet 2 by matching Column D on sheet 1. Furthermore, I require the associated data from both Column B and C on sheet 2. The spreadsheet with an example has been provided. Could you assist me in accomplishing this?",
+    "spreadsheet_path": "spreadsheet/12864",
+    "instruction_type": "Cell-Level Manipulation",
+    "answer_position": "'Sheet2'!B2:B12"
+  },
+  {
+    "id": 55979,
+    "instruction": "How can I create a formula in Excel that will display the name of a supplier, which corresponds to a specific sheet, in cell B7 of my Calculation sheet when I input an item number into cell A10? I have an Excel file with 6 sheets that contain price lists and discount lists for 3 suppliers, where each supplier has 2 sheets named similarly (e.g., Supplier_1, Supplier_2, etc.), and I need to identify the supplier based on a given item number.",
+    "spreadsheet_path": "spreadsheet/55979",
+    "instruction_type": "Cell-Level Manipulation",
+    "answer_position": "'Calc'!B7"
+  },
+  {
+    "id": 48620,
+    "instruction": "I have a list with products where some are identical but have different serial numbers. For instance, in cell A1, I have 'pencil' and in cell B1, 'yellow'. In cell A2, 'pencil' and in cell B2, 'green'. But when I try to search for a product using VLOOKUP or INDEX/MATCH, it only returns the first corresponding entry. I'm looking for a way to return the matching result in the same row, not just the first one. Could you explain the formula in detail, specifically the parts involving (15,6,ROW(?\nVLOOKUP(D2,A:B,2,0)\nAnd once the output is complete shade E2:E9 with #FCE4D6 and apply calibri font, and show 0s as blanks",
+    "spreadsheet_path": "spreadsheet/48620",
+    "instruction_type": "Cell-Level Manipulation",
+    "answer_position": "E2:E7"
+  },
+  {
+    "id": 48588,
+    "instruction": "In my Excel file, I have a list of different products in Column A with 15 unique records, but these records are not sorted and include repeated product numbers. How can I generate a unique number for each product, as I have manually done in Column B? Could you suggest a formula that can accomplish this?",
+    "spreadsheet_path": "spreadsheet/48588",
+    "instruction_type": "Cell-Level Manipulation",
+    "answer_position": "B2:B43"
+  },
+  {
+    "id": "395-36",
+    "instruction": "I have three sheets: 'Main unique ID' for manual input of IDs that may change, 'Result what I am getting', and 'Result what I am expecting.' How can I compare the 'Main unique ID' sheet with the 'Result what I am getting' sheet, and if there are any unique IDs missing in the comparison, how do I add those missing unique IDs from the 'Main unique ID' sheet into the 'Result what I am getting' sheet, along with an empty new row for each missing ID, as illustrated in the yellow-highlighted sections on the 'Result what I am expecting' sheet?",
+    "spreadsheet_path": "spreadsheet/395-36",
+    "instruction_type": "Sheet-Level Manipulation",
+    "answer_position": "'MyResult'!A1:O20",
+    "answer_sheet": "MyResult",
+    "data_position": "Main unique ID!'A1:A19,' w!'A1:O15,'Result what i am expecting !'A1:O20'"
+  },
+  {
+    "id": "382-10",
+    "instruction": "I have a column (A) in my Excel spreadsheet, and I would like to delete all values in this column that are not equal to the word \"comments\". I attempted to use a Find/Replace macro, using the '<>' symbol as a not equal indicator, but it didn't work. My code was: Sheets(\"Call QC\").Range(\"A:A\").Replace \"<>Comments<>\", \"\", xlWhole, , False, , False, False. I have an example sheet where the cells I want to clear are colored red. Note that the amount of rows and the positions where \"comments\" appear will differ significantly.",
+    "spreadsheet_path": "spreadsheet/382-10",
+    "instruction_type": "Sheet-Level Manipulation",
+    "answer_position": "'Sheet1'!A1:A19",
+    "answer_sheet": "Sheet1",
+    "data_position": "A1:A18"
+  },
+  {
+    "id": 59595,
+    "instruction": "In my Excel spreadsheet, I have a column A with non-continuous but sequentially increasing dates and a column B with points recorded for each date. I'm looking for a formula that I can enter into column C, which will calculate the total sum of points from column B for the past seven days relative to each date in addition to the points listed for that date in column A. The number of rows to be summed can vary since the dates aren't consecutive. For example, if today's date is in row 10, I need to look back in column A to find the date that is seven days earlier and sum all the points in column B from that found date to the date in row 10. The total sum should then be displayed in the corresponding cell in column C.",
+    "spreadsheet_path": "spreadsheet/59595",
+    "instruction_type": "Cell-Level Manipulation",
+    "answer_position": "C4:C19"
+  },
+  {
+    "id": 53383,
+    "instruction": "How can I create a formula in Excel to compare names and corresponding statuses across two worksheets, indicating 'matched' if both the name and status are the same and 'not matched' if they differ? The formula should check for a name in column A and then verify if the status in column B for that name matches across both sheets, as shown in the provided example workbook.",
+    "spreadsheet_path": "spreadsheet/53383",
+    "instruction_type": "Cell-Level Manipulation",
+    "answer_position": "worksheet2'!C3:C6"
+  },
+  {
+    "id": 48921,
+    "instruction": "How can I create an Excel formula that removes the leading characters from a variable-length number, where the specific characters to be deleted differ depending on the size of the original number? For example, from the number '4000001', I need to get '1', and from '4004045', the result should be '4045'. The solution should not be as simple as subtracting 400 since the number of characters to be removed can vary.",
+    "spreadsheet_path": "spreadsheet/48921",
+    "instruction_type": "Cell-Level Manipulation",
+    "answer_position": "A2:A4452"
+  },
+  {
+    "id": "416-15",
+    "instruction": "I have an Excel spreadsheet with a column of dates where some cells include a time value that starts with 'T' and ends with 'Z' and these strings are 14 characters long. I'm seeking assistance to modify an existing macro to remove these time values, leaving just the date in each cell of column A. Outputs should adhere to m/dd/yyyy (see existing A2 format)",
+    "spreadsheet_path": "spreadsheet/416-15",
+    "instruction_type": "Sheet-Level Manipulation",
+    "answer_position": "'Sheet1'!A2:A19",
+    "answer_sheet": "Sheet1",
+    "data_position": "A1:A19"
+  },
+  {
+    "id": 47798,
+    "instruction": "How can I extract the collection name from cells where the 'Collection-' tag is placed at different positions within the text? Specifically, I am looking to capture the text immediately following 'Collection-' up to either the first comma or the end of the data in each cell, bearing in mind that the 'Collection-' tag appears only once in each cell.",
+    "spreadsheet_path": "spreadsheet/47798",
+    "instruction_type": "Cell-Level Manipulation",
+    "answer_position": "B2:B7"
+  },
+  {
+    "id": 56563,
+    "instruction": "Create a formula in Excel to sum a range of cells that contains the #NUM error value, as illustrated in the attached '#NUM.xlsx' spreadsheet?  \nMy current formula is:\nSUM(C2:C13)",
+    "spreadsheet_path": "spreadsheet/56563",
+    "instruction_type": "Cell-Level Manipulation",
+    "answer_position": "C14"
+  },
+  {
+    "id": 46897,
+    "instruction": "How can I create a formula in Excel that counts the instances of a specific text or number in a column that matches a specified header title?",
+    "spreadsheet_path": "spreadsheet/46897",
+    "instruction_type": "Cell-Level Manipulation",
+    "answer_position": "I3"
+  },
+  {
+    "id": 9726,
+    "instruction": "How can I populate the 'Visit date' column in Table 2 with the date from the 'Visit date' column in Table 1 that is immediately prior to the 'Submission date' listed in Table 2 for each student? For example, if the 'Submission date' is 21-Jun-16, I need to retrieve the last 'Visit date' from Table 1 which would be 12-Jun-16. I attempted using an array formula {=INDEX(C2:C7,MATCH(TRUE,IF(H2=$A$2:$A$7,INDEX($C$2:$C$7<I2,0)),0))} to find the next smaller value, similar to how I calculate the next larger value, but it didn't work.\nINDEX(C2:C7,MATCH(TRUE,IF(H2=$A$2:$A$7,INDEX($C$2:$C$7<I2,0)),0))",
+    "spreadsheet_path": "spreadsheet/9726",
+    "instruction_type": "Cell-Level Manipulation",
+    "answer_position": "J2"
+  },
+  {
+    "id": 50768,
+    "instruction": "How can I automatically plot each risk ID from a Risk Assessment table, which includes an Impact and a Likelihood number for each risk, into a corresponding position on a matrix table based on these values? For instance, if a Risk ID has an Impact of 1 and a Likelihood of 1, it should be placed in the bottom left box of a 3x3 matrix. If multiple Risk IDs share the same Impact and Likelihood numbers, they need to be displayed in the same box, separated by commas. I need guidance on how to automate this process in Excel.",
+    "spreadsheet_path": "spreadsheet/50768",
+    "instruction_type": "Cell-Level Manipulation",
+    "answer_position": "F12:H14"
+  },
+  {
+    "id": "51-12",
+    "instruction": "How can I create a VBA code that will count the number of times a value in a range from A1 to M1 on an Excel sheet increases by at least 10% from a reference cell, beginning the count from A1 and restarting the counting process from the cell immediately right of each cell where a 10% increase is found, terminating the count before M1 if there is no further data, and display the count in cell B6? Additionally, I'm looking to include the ability to update the data range in the code, as the actual worksheet data range is L26 to SHA26.",
+    "spreadsheet_path": "spreadsheet/51-12",
+    "instruction_type": "Sheet-Level Manipulation",
+    "answer_position": "B6",
+    "answer_sheet": "Sheet1",
+    "data_position": "A1:M7"
+  },
+  {
+    "id": 31628,
+    "instruction": "Extract the number of the last day from a range of dates in cells A1:A11 in my Excel sheet, ensuring that the last date corresponds to the final entry if the dates are not sequential. Display the resulting date in cell B1 as a static number and not a formula while retaining the inputs in column A.",
+    "spreadsheet_path": "spreadsheet/31628",
+    "instruction_type": "Cell-Level Manipulation",
+    "answer_position": "B1"
+  },
+  {
+    "id": 39046,
+    "instruction": "How can I use a formula in Excel to check if a reference in column B is marked as 'CANCELLED' in another column, then count how many subreferences in column D contain a part of the parent reference from the entire column B, placing 'Yes' in column E if there is at least one match or 'No' otherwise, and finally count the number of 'Yes' entries to be displayed in column F?",
+    "spreadsheet_path": "spreadsheet/39046",
+    "instruction_type": "Cell-Level Manipulation",
+    "answer_position": "F2:F6"
+  },
+  {
+    "id": 8942,
+    "instruction": "In my Excel workbook, I have an 'overview' sheet with an Index match set up in cells B2 and C2, and a data validation list in A2. I aim to have cell B5 on the 'overview' sheet automatically calculate the monthly total of all paychecks from the 'Pay Dates' worksheet, based on the month chosen in A2. How can I modify the workbook so that selecting just the month from the data validation list in A2 will also automatically update the monthly total in B5? I've created an Index match in B2 and C2 as well as a data validation list in A2. Now I want my 'overview' sheet to calculate the monthly total of all paychecks in B5 based on the month chosen in A2. Ex. If I choose January 29 from the data validation in A2 I want B5 to calculate all the monthly pay checks in January from the 'Pay Dates' worksheet.",
+    "spreadsheet_path": "spreadsheet/8942",
+    "instruction_type": "Cell-Level Manipulation",
+    "answer_position": "'Overview'!B5"
+  },
+  {
+    "id": 48527,
+    "instruction": "How can I retrieve unique text from the third column of a worksheet where the first two columns contain the same text, and place it into a fourth column?",
+    "spreadsheet_path": "spreadsheet/48527",
+    "instruction_type": "Cell-Level Manipulation",
+    "answer_position": "D2:D5"
+  },
+  {
+    "id": 59196,
+    "instruction": "I need a formula to determine which column contains the highest value in a row, and then return the heading of that column. My Excel sheet example is attached.",
+    "spreadsheet_path": "spreadsheet/59196",
+    "instruction_type": "Cell-Level Manipulation",
+    "answer_position": "H3:H5"
+  },
+  {
+    "id": 6698,
+    "instruction": "Modify my Excel formula in cell G4 that currently counts the number of occurrences where either the value in column B or C is not equal to 0, to also include an additional condition that the value in column A must match the value in my F column. Update the output in G4:G8 corresponding to the value of F in F4:F8. Add filter to the sheet A1:C1.\nSUM(COUNTIFS('raw 1'!B2:B100000,{\">\",\">\",\"=\"}&0,'raw 1'!C2:C100000,{\"<\",\"=\",\"<\"}&0))",
+    "spreadsheet_path": "spreadsheet/6698",
+    "instruction_type": "Cell-Level Manipulation",
+    "answer_position": "G4:G8"
+  },
+  {
+    "id": 43436,
+    "instruction": "How can I calculate the number of records that are still open by the end of each month, given two dates for each record (date created and date closed)? I need a formula that can determine which records were open based on a specific month, considering that a record is open if it was not closed before the first day of the month and was not created after the last day of the month.",
+    "spreadsheet_path": "spreadsheet/43436",
+    "instruction_type": "Cell-Level Manipulation",
+    "answer_position": "I2:K6"
+  },
+  {
+    "id": 38462,
+    "instruction": "How can I round up time formatted as Custom [h]:mm, such as '55260:26', to the nearest whole hour in Excel, resulting in '55261'? The context is rounding up exported values from AMOS software for aircraft data. The number format should be general and do not name the column.",
+    "spreadsheet_path": "spreadsheet/38462",
+    "instruction_type": "Cell-Level Manipulation",
+    "answer_position": "C1:C2"
+  },
+  {
+    "id": "402-43",
+    "instruction": "How can I duplicate rows in a spreadsheet based on a count specified in column AG, so that if the value in AG is 1, the row remains singular, but if it is 2, an additional duplicate row is created, and so on, until all data in column A has been processed? Additionally, I would like to know whether the duplicated rows can be inserted directly below the existing row or at the bottom of the dataset, and I need a loop that will work until the last row of data. I have attached a sample workbook for reference.",
+    "spreadsheet_path": "spreadsheet/402-43",
+    "instruction_type": "Sheet-Level Manipulation",
+    "answer_position": "'Sheet2'!A1:AG10",
+    "answer_sheet": "Sheet2",
+    "data_position": "A1:AG20"
+  },
+  {
+    "id": "267-18",
+    "instruction": "I have an Excel sheet where I am concatenating strings in column G in the format [\"/out/\",\"https://theurl.top/images/2.jpg \", \"text?\", \"text!\"]. I need to add a prefix \"//\" to this concatenation pattern (eg, //[ ), Apply formula but only for rows that are highlighted with a yellow color. How can I accomplish this? Could you implement this based on my description?",
+    "spreadsheet_path": "spreadsheet/267-18",
+    "instruction_type": "Sheet-Level Manipulation",
+    "answer_position": "G1:G2",
+    "answer_sheet": "Folha1",
+    "data_position": "A1:G2"
+  },
+  {
+    "id": 37378,
+    "instruction": "How can I create an Excel formula to place a number in column A, starting at cell A2, that increments by 1 each time a new entry is made in the corresponding cell of column B, starting at B2? For example, cell A2 should display '1' if B2 is not empty, and A3 should show '2' if B3 contains any text.",
+    "spreadsheet_path": "spreadsheet/37378",
+    "instruction_type": "Cell-Level Manipulation",
+    "answer_position": "A2:A6"
+  },
+  {
+    "id": 53647,
+    "instruction": "I need to create formulas in cells E7:E16 where each calculates based on the input of either column C or column D in its respective row. A number will be input into either column C or column D, but never both at the same time in the same row. Originally, I attempted to use formulas that would work with inputs in column C, but I encountered issues when values were placed in column D instead, resulting in #DIV/0! errors.\nThe goal is to have cells E7:E16 pick up data from the appropriate reference cell if there's a number in column D and column C is empty, and to pull from a different reference cell if there's a number in column C and column D is empty. Make sure Column E 15 have the formula",
+    "spreadsheet_path": "spreadsheet/53647",
+    "instruction_type": "Cell-Level Manipulation",
+    "answer_position": "E7:E16"
+  },
+  {
+    "id": "142-12",
+    "instruction": "I need a VB (Visual Basic) code that will iterate through Column F and Column J in an Excel spreadsheet. The code should look for rows where the text in Column F is 'Marble Slab Creamery' and the amount in Column J is a whole number without any cents. Whenever these conditions are met, the text in Column F should be changed to 'Georgia State WH'. For example, in the provided spreadsheet, cells F10 and F13 are ones that would need this update.",
+    "spreadsheet_path": "spreadsheet/142-12",
+    "instruction_type": "Sheet-Level Manipulation",
+    "answer_position": "'Sheet1'!F1:J15",
+    "answer_sheet": "Sheet1",
+    "data_position": "F1:J15"
+  }
+]

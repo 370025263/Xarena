@@ -1,0 +1,82 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: leaderboard-ui
+  namespace: leaderboard
+  labels:
+    app: leaderboard-ui
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: leaderboard-ui
+  template:
+    metadata:
+      labels:
+        app: leaderboard-ui
+    spec:
+      containers:
+        - name: ui-server
+          # 使用你 build.sh 推送的镜像
+          image: localhost:5000/ui/leaderboard-streamlit-ui:latest
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 8501  # Streamlit 默认端口
+          env:
+            - name: http_proxy
+              value: ""
+            - name: https_proxy
+              value: ""
+            - name: HTTP_PROXY
+              value: ""
+            - name: HTTPS_PROXY
+              value: ""
+            # 运行时一般不需要代理；为防万一，把集群域名/私网网段加入 no_proxy
+            - name: no_proxy
+              value: "localhost,127.0.0.1,.svc,.svc.cluster.local,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16"
+            - name: NO_PROXY
+              value: "localhost,127.0.0.1,.svc,.svc.cluster.local,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16"
+            # 如你的 app.py 支持从环境变量读取 API_BASE_URL，可在此开启（当前代码写死了 IP，就忽略这两行或改成你要的）
+            - name: API_BASE_URL
+              value: "http://leaderboard-api-svc.leaderboard.svc.cluster.local:80"
+          # 就绪/存活探针：Streamlit 就用根路径做简单探测
+          readinessProbe:
+            httpGet:
+              path: /
+              port: 8501
+            initialDelaySeconds: 10
+            periodSeconds: 5
+            timeoutSeconds: 2
+            failureThreshold: 6
+          livenessProbe:
+            httpGet:
+              path: /
+              port: 8501
+            initialDelaySeconds: 20
+            periodSeconds: 10
+            timeoutSeconds: 2
+            failureThreshold: 3
+          resources:
+            requests:
+              cpu: "2"
+              memory: "4Gi"
+            limits:
+              cpu: "3"
+              memory: "5Gi"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: leaderboard-ui-svc
+  namespace: leaderboard
+spec:
+  type: NodePort
+  selector:
+    app: leaderboard-ui
+  ports:
+    - protocol: TCP
+      port: 80          # 集群内访问端口
+      targetPort: 8501  # Pod 内 Streamlit 端口
+      nodePort: 30002   # 宿主机暴露端口（避免与后端 30001 冲突）
+
+

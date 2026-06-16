@@ -1,0 +1,70 @@
+# 数据文件（大量轨迹 md/json/meta/pkl）
+data/
+data_bak/
+# 例外：打包数据(vendored 价格表),必须随包发布
+!src/xskill/data/
+!src/xskill/data/model_prices.json
+
+# 生成的 skill 仓库（有自己的 git）
+skill/
+# src/xskill/skill/ 是包目录,重构后引入的,不在"生成 skill 仓库"语义里——
+# 否则给它加新文件 git add 会被静默拒掉、得 -f 强加
+!src/xskill/skill/
+!src/xskill/skill/**
+
+# 运行日志
+output/
+
+# 密钥
+.key
+config.yaml
+# 例外：e2e fixture 的 pre_state/ 是测试夹具，必须入仓（否则干净 clone 跑不过 e2e）
+!tests/docker_e2e/scenarios/**/pre_state/**
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+*.egg
+dist/
+build/
+.eggs/
+*.so
+.pytest_cache/
+
+# setuptools-scm generated version file
+src/xskill/_version.py
+
+# 调试残渣（Playwright / 截图 / DOM 快照）
+.playwright-mcp/
+*-snapshot.yml
+*.png
+!docs/assets/header.png
+
+# pip editable install
+src/*.egg-info/
+
+# 环境
+.env
+.venv/
+venv/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# 本地杂物（个人脚本 / 工作笔记，不入仓）
+/CLAUDE.md
+/claude.sh
+/docs/research/
+
+# Claude Code IDE 工作目录（本地 settings + 临时 worktree）
+/.claude/

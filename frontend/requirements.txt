@@ -1,0 +1,7 @@
+streamlit
+requests
+PyJWT
+plotly
+websockets<13
+streamlit-autorefresh
+

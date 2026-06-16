@@ -1,0 +1,41 @@
+{
+  "agents": {
+    "defaults": {
+      "workspace": "/work/.openclaw/workspace",
+      "model": {
+        "primary": "deepseek/deepseek-v4-pro"
+      }
+    }
+  },
+  "gateway": {
+    "mode": "local",
+    "auth": {
+      "token": "fixture-capture-token"
+    }
+  },
+  "plugins": {
+    "entries": {
+      "deepseek": {
+        "enabled": true
+      }
+    }
+  },
+  "models": {
+    "providers": {
+      "deepseek": {
+        "baseUrl": "https://api.deepseek.com",
+        "models": [
+          {
+            "id": "deepseek-v4-pro",
+            "name": "DeepSeek V4 Pro"
+          }
+        ],
+        "apiKey": {
+          "source": "env",
+          "provider": "default",
+          "id": "DEEPSEEK_API_KEY"
+        }
+      }
+    }
+  }
+}

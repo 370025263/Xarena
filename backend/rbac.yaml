@@ -1,0 +1,45 @@
+
+# rbac-leaderboard.yaml
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: leaderboard-api-sa
+  namespace: leaderboard
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: leaderboard-job-creator-role
+  namespace: leaderboard
+rules:
+  # Job 的创建/删除/读取 + 读取 status
+  - apiGroups: ["batch"]
+    resources: ["jobs", "jobs/status"]
+    verbs: ["create", "get", "list", "watch", "delete"]
+
+  # 读 Pod 与容器日志（队列页/日志页需要）
+  - apiGroups: [""]
+    resources: ["pods", "pods/log"]
+    verbs: ["get", "list", "watch"]
+
+  # 读事件（当 Pod 被 TTL 清理时做兜底）
+  - apiGroups: [""]
+    resources: ["events"]
+    verbs: ["get", "list", "watch"]
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: leaderboard-api-binding
+  namespace: leaderboard
+subjects:
+  - kind: ServiceAccount
+    name: leaderboard-api-sa
+    namespace: leaderboard
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: leaderboard-job-creator-role
+

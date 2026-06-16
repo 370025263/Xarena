@@ -1,0 +1,78 @@
+# Release: triggered by pushing a version tag (v*).
+# Tag is the source of truth; setuptools-scm derives the package version from it.
+# Pre-release tags (e.g. v0.4.0a1, v0.4.0rc1) are supported.
+
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+jobs:
+  test:
+    name: test (py${{ matrix.python-version }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.9", "3.10", "3.11", "3.12"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+      - name: Install package with dev extras
+        run: pip install -e .[dev]
+      - name: Run pytest
+        run: pytest tests/ -q
+
+  publish:
+    name: build and publish
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install build tooling
+        run: pip install build twine setuptools-scm
+
+      - name: Assert tag matches setuptools-scm derived version
+        run: |
+          TAG_VERSION="${GITHUB_REF_NAME#v}"
+          BUILD_VERSION=$(python -m setuptools_scm)
+          echo "tag=$TAG_VERSION scm=$BUILD_VERSION"
+          if [ "$TAG_VERSION" != "$BUILD_VERSION" ]; then
+            echo "::error::Tag ($TAG_VERSION) != setuptools_scm version ($BUILD_VERSION). Working tree may be dirty or commits exist after the tag."
+            exit 1
+          fi
+
+      - name: Build sdist and wheel
+        run: python -m build
+
+      - name: Twine check
+        run: twine check dist/*
+
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          password: ${{ secrets.PYPI_API_TOKEN }}
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" \
+            dist/*.whl dist/*.tar.gz \
+            --title "$GITHUB_REF_NAME" \
+            --generate-notes

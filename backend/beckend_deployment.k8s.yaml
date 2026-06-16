@@ -1,0 +1,75 @@
+# Backend Deployment + Service for the kind cluster.
+# Adapted from beckend_deployment.yaml: single container (the log-collector
+# sidecar is dropped — log_collector.py is a no-op stub and would crash-loop;
+# terminal-state logs are harvested natively by _persist_submission_logs).
+# image -> v2-k8s (with the create_job_manifest config tweaks); imagePullPolicy
+# Never (loaded via kind load). Job pods get the deepseek key via K8S_JOB_SECRET.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: leaderboard-api
+  namespace: leaderboard
+  labels:
+    app: leaderboard-api
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: leaderboard-api
+  template:
+    metadata:
+      labels:
+        app: leaderboard-api
+    spec:
+      serviceAccountName: leaderboard-api-sa
+      containers:
+      - name: api-server
+        image: localhost:5000/leaderboard-api:v2-k8s
+        imagePullPolicy: Never
+        ports:
+        - containerPort: 8000
+        env:
+        - {name: DATABASE_URL, value: "sqlite:////db/leaderboard.db"}
+        - {name: K8S_NAMESPACE, value: "leaderboard"}
+        - {name: K8S_IMAGE_PULL_POLICY, value: "Never"}
+        - {name: K8S_JOB_SECRET, value: "algo-secrets"}
+        - {name: API_INTERNAL_URL, value: "http://leaderboard-api-svc:80"}
+        # 单节点(4cpu/15G)评测容器资源（小）
+        - {name: K8S_EVAL_CPU_REQ, value: "1"}
+        - {name: K8S_EVAL_MEM_REQ, value: "2Gi"}
+        - {name: K8S_EVAL_CPU_LIMIT, value: "3"}
+        - {name: K8S_EVAL_MEM_LIMIT, value: "6Gi"}
+        - {name: no_proxy, value: "localhost,127.0.0.1,.svc,.svc.cluster.local"}
+        - {name: NO_PROXY, value: "localhost,127.0.0.1,.svc,.svc.cluster.local"}
+        # Agent(agno) 外部 LLM -> dashscope（直连，无内网代理）
+        - {name: AGENT_LLM_BASE_URL, value: "https://dashscope.aliyuncs.com/compatible-mode/v1"}
+        - {name: AGENT_LLM_MODEL, value: "deepseek-v3.2"}
+        # AGENT_LLM_API_KEY 留空：可选的 agent-LLM 功能需要此 key。
+        # 不在仓库中硬编码密钥。install.sh 会在部署时从 algo-secrets 注入
+        # （DASHSCOPE_API_KEY），或手动 patch 此处/打开下面的 secretKeyRef。
+        - {name: AGENT_LLM_API_KEY, value: ""}
+        # 推荐：从 algo-secrets Secret 注入（install.sh 创建该 Secret）
+        # - name: AGENT_LLM_API_KEY
+        #   valueFrom:
+        #     secretKeyRef: {name: algo-secrets, key: DASHSCOPE_API_KEY, optional: true}
+        - {name: AGENT_LLM_SSL_VERIFY, value: "0"}
+        volumeMounts:
+        - {name: db-volume, mountPath: /db}
+        - {name: models-volume, mountPath: /models}
+      volumes:
+      - name: db-volume
+        hostPath: {path: /home/leaderboard-db, type: DirectoryOrCreate}
+      - name: models-volume
+        hostPath: {path: /models, type: DirectoryOrCreate}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: leaderboard-api-svc
+  namespace: leaderboard
+spec:
+  type: NodePort
+  selector:
+    app: leaderboard-api
+  ports:
+  - {protocol: TCP, port: 80, targetPort: 8000, nodePort: 30001}
