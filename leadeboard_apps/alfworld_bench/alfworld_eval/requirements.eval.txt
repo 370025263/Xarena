@@ -1,0 +1,15 @@
+requests>=2.30.0
+openai>=1.30.0
+pyyaml>=6.0
+numpy>=1.24.0,<2
+httpx>=0.27.0
+tiktoken>=0.7.0
+tenacity>=8.0.0
+omegaconf>=2.3.0
+gymnasium>=0.28.0
+# ALFWorld runtime (TextWorld-only / AlfredTWEnv). textworld[pddl] pulls
+# fast-downward-textworld which is an sdist and needs cmake + a C++ toolchain
+# (installed via apt in the Dockerfile). ai2thor/torch (the [full] extra) are
+# NOT needed for the text engine and are intentionally excluded.
+textworld[pddl]>=1.6.1
+alfworld>=0.4.2

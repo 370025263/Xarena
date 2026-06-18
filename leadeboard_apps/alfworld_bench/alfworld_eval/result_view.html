@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<!--
+  ALFWorld 自定义结果视图（榜单 baked /app/result_view.html）。
+  平台把它放进 sandbox="allow-scripts" 的嵌套 iframe，并在前面注入：
+      const DATA = <GET /api/submission/<id>/extra 的 JSON>;
+  DATA.items[i] = { question_id, is_correct, pred_answer, extra:{...} }
+  其中 extra.trajectory = [ { step, action, reasoning, observation, reward, done } ]
+  本文件是纯渲染器：只读 DATA 画 DOM，不持 token、不发网络请求，全部用 textContent 转义。
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<style>
+  :root { color-scheme: light; }
+  body { font-family: -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+         margin: 0; padding: 16px; background: #f6f7f9; color: #1f2329; }
+  h2 { margin: 0 0 4px; font-size: 18px; }
+  .sub { color: #6b7280; font-size: 13px; margin-bottom: 14px; }
+  .summary { display: flex; gap: 14px; flex-wrap: wrap; margin-bottom: 16px; }
+  .stat { background: #fff; border: 1px solid #e5e7eb; border-radius: 10px;
+          padding: 10px 14px; min-width: 90px; }
+  .stat .k { font-size: 11px; color: #6b7280; text-transform: uppercase; letter-spacing: .03em; }
+  .stat .v { font-size: 20px; font-weight: 600; margin-top: 2px; }
+  .task { background: #fff; border: 1px solid #e5e7eb; border-radius: 12px;
+          margin-bottom: 12px; overflow: hidden; }
+  .task > .head { display: flex; align-items: center; gap: 10px; cursor: pointer;
+                  padding: 12px 14px; user-select: none; }
+  .task > .head:hover { background: #fafafa; }
+  .badge { font-size: 11px; font-weight: 700; padding: 3px 9px; border-radius: 999px; color: #fff; }
+  .badge.ok { background: #16a34a; }
+  .badge.fail { background: #dc2626; }
+  .tid { font-weight: 600; font-size: 14px; }
+  .ttype { font-size: 12px; color: #6b7280; }
+  .pred { margin-left: auto; font-size: 12px; color: #374151; font-family: ui-monospace, monospace; }
+  .body { display: none; padding: 0 14px 14px; }
+  .task.open .body { display: block; }
+  .task.open .caret { transform: rotate(90deg); }
+  .caret { transition: transform .15s; color: #9ca3af; }
+  .desc { font-size: 13px; color: #374151; background: #f9fafb; border-radius: 8px;
+          padding: 8px 10px; margin: 8px 0 12px; white-space: pre-wrap; }
+  .step { border-left: 3px solid #e5e7eb; padding: 6px 0 6px 12px; margin: 0 0 8px; }
+  .step.done { border-left-color: #16a34a; }
+  .step-h { font-size: 12px; color: #6b7280; margin-bottom: 3px; }
+  .step-h b { color: #1f2329; }
+  .action { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 13px;
+            background: #eef2ff; color: #3730a3; border-radius: 6px; padding: 2px 7px;
+            display: inline-block; }
+  .think { font-size: 12px; color: #6b7280; margin: 4px 0; white-space: pre-wrap; }
+  .obs { font-size: 12px; color: #111827; background: #f3f4f6; border-radius: 6px;
+         padding: 6px 8px; margin-top: 4px; white-space: pre-wrap; font-family: ui-monospace, monospace; }
+  .empty { color: #9ca3af; font-style: italic; padding: 24px; text-align: center; }
+</style>
+</head>
+<body>
+  <div id="root"></div>
+<script>
+(function () {
+  "use strict";
+  var data = (typeof DATA !== "undefined" && DATA) ? DATA : { items: [] };
+  var items = Array.isArray(data.items) ? data.items : [];
+  var root = document.getElementById("root");
+
+  function el(tag, cls, text) {
+    var n = document.createElement(tag);
+    if (cls) n.className = cls;
+    if (text !== undefined && text !== null) n.textContent = String(text);
+    return n;
+  }
+
+  if (!items.length) {
+    root.appendChild(el("div", "empty", "No ALFWorld trajectory data for this submission."));
+    return;
+  }
+
+  // ---- summary ----
+  var nPass = 0, nTotal = items.length, totalSteps = 0;
+  items.forEach(function (it) {
+    if (it && it.is_correct) nPass++;
+    var ex = (it && it.extra) || {};
+    if (typeof ex.n_turns === "number") totalSteps += ex.n_turns;
+  });
+  var rate = nTotal ? (100 * nPass / nTotal) : 0;
+
+  var title = el("h2", null, "ALFWorld — Skill Evaluation");
+  root.appendChild(title);
+  root.appendChild(el("div", "sub", "Per-task ReAct trajectories (action / reasoning / observation), goal completion = success."));
+
+  var summary = el("div", "summary");
+  function stat(k, v) { var s = el("div", "stat"); s.appendChild(el("div", "k", k)); s.appendChild(el("div", "v", v)); return s; }
+  summary.appendChild(stat("Success", nPass + " / " + nTotal));
+  summary.appendChild(stat("Success rate", rate.toFixed(1) + "%"));
+  summary.appendChild(stat("Avg steps", nTotal ? (totalSteps / nTotal).toFixed(1) : "0"));
+  root.appendChild(summary);
+
+  // ---- per task ----
+  items.forEach(function (it) {
+    var ex = (it && it.extra) || {};
+    var ok = !!(it && it.is_correct);
+    var task = el("div", "task");
+
+    var head = el("div", "head");
+    head.appendChild(el("span", "caret", "▶"));
+    head.appendChild(el("span", "badge " + (ok ? "ok" : "fail"), ok ? "SUCCESS" : "FAIL"));
+    head.appendChild(el("span", "tid", (it && it.question_id) || "?"));
+    head.appendChild(el("span", "ttype", ex.task_type ? ("[" + ex.task_type + "]") : ""));
+    head.appendChild(el("span", "pred", (it && it.pred_answer) || ""));
+    task.appendChild(head);
+
+    var body = el("div", "body");
+    var desc = ex.task_description || "";
+    if (desc) body.appendChild(el("div", "desc", "Task: " + desc));
+
+    var traj = Array.isArray(ex.trajectory) ? ex.trajectory : [];
+    if (!traj.length) {
+      body.appendChild(el("div", "think", "(no recorded steps)"));
+    }
+    traj.forEach(function (st) {
+      var stepEl = el("div", "step" + (st && st.done ? " done" : ""));
+      var h = el("div", "step-h");
+      var stepNo = (st && st.step !== undefined && st.step !== null) ? (Number(st.step) + 1) : "?";
+      h.appendChild(el("b", null, "Step " + stepNo));
+      if (st && st.reward !== undefined && st.reward !== null) {
+        h.appendChild(document.createTextNode("  ·  reward " + st.reward));
+      }
+      stepEl.appendChild(h);
+      if (st && st.action) {
+        var a = el("div");
+        a.appendChild(el("span", "action", st.action));
+        stepEl.appendChild(a);
+      }
+      if (st && st.reasoning) stepEl.appendChild(el("div", "think", st.reasoning));
+      if (st && st.observation) stepEl.appendChild(el("div", "obs", st.observation));
+      body.appendChild(stepEl);
+    });
+
+    task.appendChild(body);
+    head.addEventListener("click", function () { task.classList.toggle("open"); });
+    root.appendChild(task);
+  });
+})();
+</script>
+</body>
+</html>
