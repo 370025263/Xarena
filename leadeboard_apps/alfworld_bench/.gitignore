@@ -1,0 +1,13 @@
+# Docker build-context staging artifacts (rebuilt from vendor/ + ../data by build.sh)
+*/_ctx/
+alfworld_eval/data/
+algo_skillopt/_ctx/
+algo_skillopt/train_split/
+algo_skillopt/data_stage/
+algo_trace2skill/_ctx/
+# Local full ALFWorld dataset (fetched by data/fetch_data.sh; ~1.7 GB, do NOT commit)
+data/alfworld_data/
+data/json_2.1.1/
+data/json_2.1.2/
+data/logic/
+*.zip

@@ -1,0 +1,17 @@
+[
+  {
+    "id": "test:0000",
+    "gamefile": "json_2.1.1/valid_unseen/look_at_obj_in_light-AlarmClock-None-DeskLamp-308/trial_T20190908_222917_366542/game.tw-pddl",
+    "task_type": "look_at_obj_in_light"
+  },
+  {
+    "id": "test:0018",
+    "gamefile": "json_2.1.1/valid_unseen/pick_and_place_simple-Mug-None-Desk-308/trial_T20190908_125200_737896/game.tw-pddl",
+    "task_type": "pick_and_place_simple"
+  },
+  {
+    "id": "test:0042",
+    "gamefile": "json_2.1.1/valid_unseen/pick_clean_then_place_in_recep-Bowl-None-Cabinet-10/trial_T20190909_061130_844814/game.tw-pddl",
+    "task_type": "pick_clean_then_place_in_recep"
+  }
+]
