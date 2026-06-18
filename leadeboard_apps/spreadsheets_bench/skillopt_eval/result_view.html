@@ -27,16 +27,18 @@
   details.rv-sec > summary:hover { text-decoration: underline; }
   details.rv-sec[open] > summary { margin-bottom: 6px; }
   .rv-fail-reason { color: #cf222e; font-size: 12.5px; margin-top: 6px; }
-  .rv-traj { margin: 0; padding: 4px 0 0; }
-  .rv-step { display: flex; gap: 8px; padding: 6px 0; border-bottom: 1px dashed #eaeef2; }
-  .rv-step:last-child { border-bottom: 0; }
-  .rv-step-idx { flex: 0 0 auto; color: #8b949e; font-size: 11px; font-family: ui-monospace, monospace; min-width: 22px; text-align: right; padding-top: 2px; }
-  .rv-step-body { flex: 1 1 auto; min-width: 0; }
-  .rv-tool-badge { display: inline-block; font-size: 11px; font-weight: 700; padding: 1px 7px; border-radius: 6px; background: #ddf4ff; color: #0969da; border: 1px solid #b6e3ff; margin-right: 6px; }
-  .rv-result-badge { display: inline-block; font-size: 11px; font-weight: 600; padding: 1px 7px; border-radius: 6px; background: #f6f8fa; color: #57606a; border: 1px solid #eaeef2; margin-right: 6px; }
-  .rv-text-badge { display: inline-block; font-size: 11px; font-weight: 600; padding: 1px 7px; border-radius: 6px; background: #fff8c5; color: #7d4e00; border: 1px solid #f0e08a; margin-right: 6px; }
-  .rv-step-arg { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12px; color: #1f2328; white-space: pre-wrap; word-break: break-word; }
-  .rv-step-note { font-size: 12.5px; color: #57606a; white-space: pre-wrap; word-break: break-word; }
+  /* ── 轨迹：工具调用块 vs 助手气泡，一眼区分 ── */
+  .rv-flow { display: flex; flex-direction: column; gap: 8px; padding-top: 6px; }
+  .rv-tool { border: 1px solid #e1e6eb; border-left: 3px solid var(--tc, #57606a); border-radius: 8px; background: #fbfcfe; overflow: hidden; }
+  .rv-tool-h { display: flex; align-items: baseline; gap: 8px; padding: 6px 10px; background: #f3f5f8; flex-wrap: wrap; }
+  .rv-tbadge { font: 700 11px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; color: #fff; padding: 2px 8px; border-radius: 6px; letter-spacing: .3px; white-space: nowrap; }
+  .rv-tin { font: 12px/1.5 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; color: #24292f; white-space: pre-wrap; word-break: break-word; flex: 1 1 auto; min-width: 0; }
+  .rv-tout { padding: 7px 10px; font: 12px/1.5 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; color: #5a636e; background: #fff; white-space: pre-wrap; word-break: break-word; max-height: 150px; overflow: auto; border-top: 1px solid #eef1f4; }
+  .rv-tout::before { content: "↳ "; color: #b0b8c1; }
+  .rv-assistant { border: 1px solid #d7defa; background: #eef1ff; border-radius: 8px; padding: 8px 12px; }
+  .rv-assistant-h { display: flex; align-items: center; gap: 6px; margin-bottom: 4px; }
+  .rv-ava-l { font-size: 11px; font-weight: 700; color: #4f46e5; text-transform: uppercase; letter-spacing: .5px; }
+  .rv-assistant-t { font-size: 13px; line-height: 1.6; color: #1f2328; white-space: pre-wrap; word-break: break-word; max-height: 240px; overflow: auto; }
 </style>
 
 <div class="rv-wrap" id="rv-root"></div>
@@ -82,34 +84,54 @@
     }
   }
 
-  // 工具调用轨迹（可折叠）：每步 tool_use(名称徽章+输入) / tool_result(摘要) / text(助手备注)
+  // 工具配色：一眼区分不同工具
+  function toolColor(name) {
+    var m = { Read:"#0969da", Bash:"#1a7f37", Write:"#bc4c00", Edit:"#8250df", MultiEdit:"#8250df",
+              Grep:"#1b7c83", Glob:"#1b7c83", LS:"#6e7781", Task:"#9a6700", WebFetch:"#0550ae", TodoWrite:"#6e7781" };
+    return m[name] || "#57606a";
+  }
+
+  // 轨迹：tool_use(+紧随的 tool_result 作为输出) → "工具调用块"；text → "🤖 助手气泡"。两者视觉截然不同。
   function addTrajectory(card, steps) {
     if (!Array.isArray(steps) || steps.length === 0) return false;
+    var nTools = 0, i;
+    for (i = 0; i < steps.length; i++) if (steps[i] && steps[i].kind === "tool_use") nTools++;
     var det = el("details", "rv-sec");
-    var sum = el("summary", null, "🔧 工具调用过程 (" + steps.length + " 步)");
-    det.appendChild(sum);
-    var wrap = el("div", "rv-traj");
-    steps.forEach(function (s, i) {
-      var row = el("div", "rv-step");
-      row.appendChild(el("div", "rv-step-idx", String(i + 1)));
-      var body = el("div", "rv-step-body");
-      var kind = s && s.kind;
-      if (kind === "tool_use") {
-        body.appendChild(el("span", "rv-tool-badge", s.name || "tool"));
-        if (s.input) body.appendChild(el("span", "rv-step-arg", String(s.input)));
-      } else if (kind === "tool_result") {
-        body.appendChild(el("span", "rv-result-badge", "结果"));
-        body.appendChild(el("span", "rv-step-note", String(s.summary || "")));
-      } else if (kind === "text") {
-        body.appendChild(el("span", "rv-text-badge", "助手"));
-        body.appendChild(el("span", "rv-step-note", String(s.text || "")));
-      } else {
-        body.appendChild(el("span", "rv-step-note", JSON.stringify(s)));
+    det.appendChild(el("summary", null, "🔧 工具调用过程 (" + nTools + " 次调用)"));
+    var flow = el("div", "rv-flow");
+    for (i = 0; i < steps.length; i++) {
+      var s = steps[i] || {};
+      if (s.kind === "text") {
+        if (!s.text) continue;
+        var bub = el("div", "rv-assistant");
+        var ah = el("div", "rv-assistant-h");
+        ah.appendChild(el("span", null, "🤖"));
+        ah.appendChild(el("span", "rv-ava-l", "助手"));
+        bub.appendChild(ah);
+        bub.appendChild(el("div", "rv-assistant-t", s.text));
+        flow.appendChild(bub);
+      } else if (s.kind === "tool_use") {
+        var tc = toolColor(s.name);
+        var blk = el("div", "rv-tool");
+        blk.style.setProperty("--tc", tc);
+        var h = el("div", "rv-tool-h");
+        var badge = el("span", "rv-tbadge", s.name || "tool");
+        badge.style.background = tc;
+        h.appendChild(badge);
+        if (s.input) h.appendChild(el("code", "rv-tin", String(s.input)));
+        blk.appendChild(h);
+        if (steps[i + 1] && steps[i + 1].kind === "tool_result") {       // 紧随的结果作为本次调用的输出
+          blk.appendChild(el("div", "rv-tout", String(steps[i + 1].summary || "")));
+          i++;
+        }
+        flow.appendChild(blk);
+      } else if (s.kind === "tool_result") {
+        var orphan = el("div", "rv-tool");
+        orphan.appendChild(el("div", "rv-tout", String(s.summary || "")));
+        flow.appendChild(orphan);
       }
-      row.appendChild(body);
-      wrap.appendChild(row);
-    });
-    det.appendChild(wrap);
+    }
+    det.appendChild(flow);
     card.appendChild(det);
     return true;
   }
