@@ -12,6 +12,7 @@ from flask_bcrypt import Bcrypt
 from flask_jwt_extended import (
     JWTManager, create_access_token, get_jwt_identity, jwt_required, get_jwt
 )
+from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import load_only
 from werkzeug.utils import secure_filename
@@ -114,6 +115,9 @@ class Leaderboard(db.Model):
 
     # 新增：每个榜单要求 algo 必须提供的 ENV（JSON list[str]），可为空表示无约束
     required_algo_env_keys = db.Column(db.Text, nullable=True)
+
+    # 新增：榜单自带的「自定义结果视图」HTML/JS（由 evaluator 在 /score 回传后缓存到榜单上）
+    result_view_html = db.Column(db.Text, nullable=True)
 
 
 class Submission(db.Model):
@@ -410,6 +414,24 @@ def create_default_user(username, password, role):
         print(f"Created default {role} user: {username}")
     else:
         print(f"User '{username}' already exists.")
+
+
+def _ensure_result_view_html_column():
+    """幂等迁移：库可能已存在，确保 leaderboards.result_view_html 列在。
+    每次后端启动都会跑一次；列已存在时吞掉「duplicate column」错误即可。"""
+    with app.app_context():
+        try:
+            db.session.execute(
+                text("ALTER TABLE leaderboards ADD COLUMN result_view_html TEXT")
+            )
+            db.session.commit()
+            app.logger.info("Added column leaderboards.result_view_html")
+        except Exception as e:
+            db.session.rollback()
+            app.logger.debug(f"result_view_html column migration no-op: {e}")
+
+
+_ensure_result_view_html_column()
 
 
 @app.cli.command("create-admin")
@@ -2246,6 +2268,17 @@ def get_submission_extra(sub_id):
                       "pred_answer": r.pred_answer, "extra": extra})
     return jsonify({"submission_id": sub_id, "count": len(items), "items": items})
 
+
+@app.route('/api/leaderboard/<int:lb_id>/result-view', methods=['GET'])
+@jwt_required()
+def get_leaderboard_result_view(lb_id):
+    """返回榜单自带的自定义结果视图 HTML（若有）。"""
+    board = Leaderboard.query.get(lb_id)
+    if not board:
+        return jsonify({"msg": "leaderboard not found"}), 404
+    html = board.result_view_html or ""
+    return jsonify({"has_custom": bool(html.strip()), "html": html})
+
 @app.route("/api/submission/upload", methods=["POST"])
 @jwt_required(optional=True)
 def upload_submission_and_submit_job():
@@ -2722,6 +2755,13 @@ def update_submission_score(sub_id):
                 )
                 db.session.add(det)
         # ------------------------------------------------------
+
+        # 4) 榜单自定义结果视图：evaluator 回传 result_view_html 时缓存到榜单上
+        rv_html = payload.get("result_view_html")
+        if isinstance(rv_html, str) and rv_html.strip() and submission.leaderboard_id is not None:
+            board = Leaderboard.query.get(submission.leaderboard_id)
+            if board is not None:
+                board.result_view_html = rv_html
 
         db.session.commit()
 
