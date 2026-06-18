@@ -231,14 +231,13 @@ def _prepare_alfworld_runtime() -> str:
             except Exception as e:
                 _log(f"WARN: 无法拷 logic 文件 {fn}: {e}")
 
-    # 4b) 运行期 split_dir：相对 gamefile -> 绝对
+    # 4b) 运行期 split_dir：相对 gamefile -> 绝对。
+    # SkillOpt 的 SplitDataLoader._load_all_splits 要求 train/ val/ test/ 三个子目录都在
+    # （即使只评 test）。miniset 仅含 test/ 时，用 EVAL_SPLIT 的 items 作为占位填充缺失 split，
+    # 保证 loader 能加载；实际只评 --split EVAL_SPLIT。
     run_split = os.path.join(OUT_DIR, "split_runtime")
-    n_total = 0
-    for sp in ("train", "val", "test"):
-        src_items = os.path.join(SPLIT_DIR, sp, "items.json")
-        if not os.path.isfile(src_items):
-            continue
-        items = json.load(open(src_items))
+
+    def _expand(items: List[dict]) -> List[dict]:
         out = []
         for it in items:
             row = dict(it)
@@ -246,11 +245,28 @@ def _prepare_alfworld_runtime() -> str:
             if gf and not os.path.isabs(gf):
                 row["gamefile"] = os.path.join(ALFWORLD_DATA, gf)
             out.append(row)
-        n_total += len(out)
+        return out
+
+    loaded: Dict[str, List[dict]] = {}
+    for sp in ("train", "val", "test"):
+        src_items = os.path.join(SPLIT_DIR, sp, "items.json")
+        if os.path.isfile(src_items):
+            loaded[sp] = _expand(json.load(open(src_items)))
+
+    if EVAL_SPLIT not in loaded or not loaded.get(EVAL_SPLIT):
+        raise RuntimeError(f"split_dir 缺少要评测的 split '{EVAL_SPLIT}'：{SPLIT_DIR}")
+
+    # 缺失的 split 用 EVAL_SPLIT 的 items 占位（loader 需要三目录都在）。
+    placeholder = loaded[EVAL_SPLIT]
+    n_total = 0
+    for sp in ("train", "val", "test"):
+        items = loaded.get(sp) or placeholder
+        n_total += len(items) if sp == EVAL_SPLIT else 0
         dst_dir = os.path.join(run_split, sp)
         os.makedirs(dst_dir, exist_ok=True)
-        json.dump(out, open(os.path.join(dst_dir, "items.json"), "w"), ensure_ascii=False, indent=2)
-    _log(f"prepared runtime split_dir {run_split} ({n_total} items across splits)")
+        json.dump(items, open(os.path.join(dst_dir, "items.json"), "w"), ensure_ascii=False, indent=2)
+    _log(f"prepared runtime split_dir {run_split} (eval split '{EVAL_SPLIT}': {n_total} items; "
+         f"missing splits stubbed with placeholder)")
     return run_split
 
 
