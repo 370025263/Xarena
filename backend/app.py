@@ -3979,6 +3979,7 @@ _agent_runner = init_agent_routes(
     User=User,
     Leaderboard=Leaderboard,
     Submission=Submission,
+    SubmissionEvalDetail=SubmissionEvalDetail,
     EnvPreset=EnvPreset,
     SubmissionLog=SubmissionLog,
     k8s_core_v1=k8s_core_v1,

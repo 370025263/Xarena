@@ -38,6 +38,7 @@ from .tools import (
     list_user, search_user, search_user_entry,
     search_ladder, read_ladder_info, search_ladder_entry,
     run_task, list_curr_task, get_task, cancel_task, get_task_logs, queue_status,
+    read_submission_extra,
     wait, bash,
 )
 
@@ -197,6 +198,7 @@ class BackendRefs:
     k8s_core_v1: Any; k8s_batch_v1: Any; K8S_NAMESPACE: str
     sync_submission_status: Any; persist_submission_logs: Any; start_k8s_job: Any
     database_url: str
+    SubmissionEvalDetail: Any = None  # <--- eval-detail model（读 extraconfig）
 
 
 # ============================================================
@@ -355,6 +357,7 @@ class AgentRunner:
                     flask_app=self.refs.flask_app, db=self.refs.db,
                     User=self.refs.User, Leaderboard=self.refs.Leaderboard,
                     Submission=self.refs.Submission, SubmissionLog=self.refs.SubmissionLog,
+                    SubmissionEvalDetail=self.refs.SubmissionEvalDetail,
                     k8s_core_v1=self.refs.k8s_core_v1, k8s_batch_v1=self.refs.k8s_batch_v1,
                     K8S_NAMESPACE=self.refs.K8S_NAMESPACE,
                     sync_submission_status=self.refs.sync_submission_status,
@@ -388,6 +391,7 @@ class AgentRunner:
                     list_user, search_user, search_user_entry,
                     search_ladder, read_ladder_info, search_ladder_entry,
                     run_task, list_curr_task, get_task, cancel_task, get_task_logs,
+                    read_submission_extra,
                     queue_status, wait, bash,
                     # New tools
                     tool_list_presets, tool_search_env_history
@@ -480,6 +484,7 @@ class AgentRunner:
 def init_agent_routes(
     flask_app, db, *,
     User, Leaderboard, Submission, SubmissionLog, EnvPreset, # <--- EnvPreset required
+    SubmissionEvalDetail=None,  # <--- eval-detail model（读 extraconfig）
     k8s_core_v1, k8s_batch_v1, K8S_NAMESPACE: str,
     sync_submission_status, persist_submission_logs, start_k8s_job,
     database_url: str,
@@ -488,6 +493,7 @@ def init_agent_routes(
         flask_app=flask_app, db=db,
         User=User, Leaderboard=Leaderboard,
         Submission=Submission, SubmissionLog=SubmissionLog, EnvPreset=EnvPreset, # <--- Pass here
+        SubmissionEvalDetail=SubmissionEvalDetail,
         k8s_core_v1=k8s_core_v1, k8s_batch_v1=k8s_batch_v1,
         K8S_NAMESPACE=K8S_NAMESPACE,
         sync_submission_status=sync_submission_status,

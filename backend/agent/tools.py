@@ -55,6 +55,9 @@ class AgentDeps:
     # 取消标志（runner 提供 threading.Event）
     cancel_flag: Any
 
+    # eval 明细模型类（来自 app.py 注入，用于读 extraconfig）
+    SubmissionEvalDetail: Any = None
+
 
 # -------------------------
 # 小工具：权限与可见性
@@ -633,6 +636,28 @@ def get_task_logs(task_id: int, run_context: RunContext | None = None) -> str:
 
         except Exception as e:
             return json.dumps({"ok": False, "error": "k8s log fetch failed", "details": str(e)}, ensure_ascii=False)
+
+
+@tool
+def read_submission_extra(submission_id: int, question_id: str | None = None,
+                          limit: int = 20, run_context: RunContext | None = None) -> str:
+    """读取某次提交回传的 extraconfig（per-item extra_json：含轨迹/聊天日志等）。"""
+    assert run_context is not None
+    deps: AgentDeps = run_context.dependencies["deps"]
+    _check_cancel(deps)
+    with deps.flask_app.app_context():
+        s = _visible_submission_query(deps).filter(deps.Submission.id == int(submission_id)).first()
+        if not s:
+            return json.dumps({"ok": False, "error": "submission not found"}, ensure_ascii=False)
+        if deps.SubmissionEvalDetail is None:
+            return json.dumps({"ok": False, "error": "eval-detail model not wired"}, ensure_ascii=False)
+        q = deps.SubmissionEvalDetail.query.filter_by(submission_id=s.id)
+        if question_id:
+            q = q.filter_by(question_id=str(question_id))
+        rows = q.limit(int(limit or 20)).all()
+        out = [{"question_id": r.question_id, "is_correct": r.is_correct,
+                "extra": _json_load_maybe(r.extra_json)} for r in rows]
+        return json.dumps({"ok": True, "count": len(out), "items": out}, ensure_ascii=False)[:8000]
 
 
 @tool
