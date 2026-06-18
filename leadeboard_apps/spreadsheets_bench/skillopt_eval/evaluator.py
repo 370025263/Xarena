@@ -405,6 +405,17 @@ def main():
     metrics, eval_details = _build_metrics_and_details(out_dir, conv)
     _post_metrics(metrics, eval_details=eval_details)
 
+    # 通用产物落盘：把本次评测 run 目录拷到 $OUTPUT_DIR/eval（不耦合 phase）。
+    _out_base = os.environ.get("OUTPUT_DIR", "").strip()
+    if _out_base:
+        _dst = os.path.join(_out_base, "eval")
+        try:
+            os.makedirs(_dst, exist_ok=True)
+            subprocess.run(["cp", "-a", out_dir + "/.", _dst], check=False)
+            _log(f"copied eval artifacts -> {_dst}")
+        except Exception as e:
+            _log(f"WARN: copy eval artifacts failed: {e}")
+
     _log("=== SUMMARY ===")
     _log(json.dumps(_sanitize_for_json(metrics), ensure_ascii=False, indent=2))
     _log("Evaluation done.")
