@@ -27,6 +27,16 @@
   details.rv-sec > summary:hover { text-decoration: underline; }
   details.rv-sec[open] > summary { margin-bottom: 6px; }
   .rv-fail-reason { color: #cf222e; font-size: 12.5px; margin-top: 6px; }
+  .rv-traj { margin: 0; padding: 4px 0 0; }
+  .rv-step { display: flex; gap: 8px; padding: 6px 0; border-bottom: 1px dashed #eaeef2; }
+  .rv-step:last-child { border-bottom: 0; }
+  .rv-step-idx { flex: 0 0 auto; color: #8b949e; font-size: 11px; font-family: ui-monospace, monospace; min-width: 22px; text-align: right; padding-top: 2px; }
+  .rv-step-body { flex: 1 1 auto; min-width: 0; }
+  .rv-tool-badge { display: inline-block; font-size: 11px; font-weight: 700; padding: 1px 7px; border-radius: 6px; background: #ddf4ff; color: #0969da; border: 1px solid #b6e3ff; margin-right: 6px; }
+  .rv-result-badge { display: inline-block; font-size: 11px; font-weight: 600; padding: 1px 7px; border-radius: 6px; background: #f6f8fa; color: #57606a; border: 1px solid #eaeef2; margin-right: 6px; }
+  .rv-text-badge { display: inline-block; font-size: 11px; font-weight: 600; padding: 1px 7px; border-radius: 6px; background: #fff8c5; color: #7d4e00; border: 1px solid #f0e08a; margin-right: 6px; }
+  .rv-step-arg { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12px; color: #1f2328; white-space: pre-wrap; word-break: break-word; }
+  .rv-step-note { font-size: 12.5px; color: #57606a; white-space: pre-wrap; word-break: break-word; }
 </style>
 
 <div class="rv-wrap" id="rv-root"></div>
@@ -70,6 +80,38 @@
       sec.appendChild(el("pre", opts.code ? "rv-pre" : "rv-text", value));
       card.appendChild(sec);
     }
+  }
+
+  // 工具调用轨迹（可折叠）：每步 tool_use(名称徽章+输入) / tool_result(摘要) / text(助手备注)
+  function addTrajectory(card, steps) {
+    if (!Array.isArray(steps) || steps.length === 0) return false;
+    var det = el("details", "rv-sec");
+    var sum = el("summary", null, "🔧 工具调用过程 (" + steps.length + " 步)");
+    det.appendChild(sum);
+    var wrap = el("div", "rv-traj");
+    steps.forEach(function (s, i) {
+      var row = el("div", "rv-step");
+      row.appendChild(el("div", "rv-step-idx", String(i + 1)));
+      var body = el("div", "rv-step-body");
+      var kind = s && s.kind;
+      if (kind === "tool_use") {
+        body.appendChild(el("span", "rv-tool-badge", s.name || "tool"));
+        if (s.input) body.appendChild(el("span", "rv-step-arg", String(s.input)));
+      } else if (kind === "tool_result") {
+        body.appendChild(el("span", "rv-result-badge", "结果"));
+        body.appendChild(el("span", "rv-step-note", String(s.summary || "")));
+      } else if (kind === "text") {
+        body.appendChild(el("span", "rv-text-badge", "助手"));
+        body.appendChild(el("span", "rv-step-note", String(s.text || "")));
+      } else {
+        body.appendChild(el("span", "rv-step-note", JSON.stringify(s)));
+      }
+      row.appendChild(body);
+      wrap.appendChild(row);
+    });
+    det.appendChild(wrap);
+    card.appendChild(det);
+    return true;
   }
 
   items.forEach(function (it) {
@@ -125,8 +167,11 @@
     addSection(card, "解题代码 (solution.py)", extra.solution_py, { code: true });
     // 表格预览
     addSection(card, "表格预览", extra.spreadsheet_preview, { code: true });
-    // 求解轨迹（可折叠）
-    addSection(card, "求解轨迹 (chat log)", extra.chatmessage_log, { code: true, collapsible: true });
+    // 工具调用过程（可折叠）；为空时回退到原 chat log 渲染（保持旧行为）
+    var hasTraj = addTrajectory(card, extra.tool_trajectory);
+    if (!hasTraj) {
+      addSection(card, "求解轨迹 (chat log)", extra.chatmessage_log, { code: true, collapsible: true });
+    }
 
     root.appendChild(card);
   });

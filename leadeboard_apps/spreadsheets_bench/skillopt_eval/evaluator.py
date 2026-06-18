@@ -315,6 +315,109 @@ def _gold_positions() -> Dict[str, str]:
     return pos
 
 
+def _result_summary(content: Any, limit: int = 200) -> str:
+    """tool_result.content 可能是 str 或 [ {type:text,text:..}, .. ]，取前若干字符摘要。"""
+    if isinstance(content, str):
+        return content[:limit]
+    if isinstance(content, list):
+        parts = []
+        for blk in content:
+            if isinstance(blk, dict):
+                parts.append(str(blk.get("text") or blk.get("content") or ""))
+            else:
+                parts.append(str(blk))
+        return (" ".join(p for p in parts if p))[:limit]
+    if content is None:
+        return ""
+    return str(content)[:limit]
+
+
+def _input_repr(inp: Any, limit: int = 300) -> str:
+    """tool_use.input 的紧凑表示（key=val），截断。"""
+    if isinstance(inp, dict):
+        try:
+            return json.dumps(inp, ensure_ascii=False)[:limit]
+        except Exception:
+            return str(inp)[:limit]
+    return str(inp)[:limit] if inp is not None else ""
+
+
+def _tool_trajectory_for_task(out_dir: str, sid: Optional[str], task_id: str,
+                              max_steps: int = 40) -> List[Dict[str, Any]]:
+    """
+    解析 claude 会话 jsonl，抽取按时序排列的工具调用轨迹（single 模式才有）。
+
+    会话 jsonl 落在隔离 home 下：
+      {out_dir}/_home/.claude/projects/*predictions-<task_id>-codex-single*/*.jsonl
+    每行 message.content 是一个 block 列表，逐块产出紧凑 step：
+      {"kind":"tool_use","name":..,"input":..}
+      {"kind":"tool_result","summary":..}
+      {"kind":"text","text":..}
+    task_id 可能含连字符（如 188-39），用通配稳健匹配该目录。仅单模式存在该文件，
+    否则返回空列表。最多 max_steps 步。
+    """
+    proj_root = os.path.join(out_dir, "_home", ".claude", "projects")
+    if not os.path.isdir(proj_root):
+        return []
+    patterns = [
+        os.path.join(proj_root, f"*predictions-{task_id}-codex-single*", "*.jsonl"),
+        os.path.join(proj_root, f"*predictions-{task_id}-*", "*.jsonl"),
+    ]
+    files: List[str] = []
+    for pat in patterns:
+        files = sorted(glob.glob(pat))
+        if files:
+            break
+    if not files:
+        return []
+
+    steps: List[Dict[str, Any]] = []
+    for fp in files:
+        try:
+            fh = open(fp, "r", encoding="utf-8", errors="replace")
+        except Exception:
+            continue
+        with fh:
+            for line in fh:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    obj = json.loads(line)
+                except Exception:
+                    continue
+                msg = obj.get("message")
+                if not isinstance(msg, dict):
+                    continue
+                content = msg.get("content")
+                if not isinstance(content, list):
+                    continue
+                for blk in content:
+                    if not isinstance(blk, dict):
+                        continue
+                    bt = blk.get("type")
+                    if bt == "tool_use":
+                        steps.append({
+                            "kind": "tool_use",
+                            "name": str(blk.get("name") or ""),
+                            "input": _input_repr(blk.get("input")),
+                        })
+                    elif bt == "tool_result":
+                        steps.append({
+                            "kind": "tool_result",
+                            "summary": _result_summary(blk.get("content")),
+                        })
+                    elif bt == "text":
+                        txt = str(blk.get("text") or "").strip()
+                        if txt:
+                            steps.append({"kind": "text", "text": txt[:500]})
+                    if len(steps) >= max_steps:
+                        return steps
+        if steps:
+            break
+    return steps[:max_steps]
+
+
 def _build_metrics_and_details(out_dir: str, skill_convention: str) -> Tuple[Dict[str, Any], List[Dict[str, Any]]]:
     summ = {}
     sp = os.path.join(out_dir, "eval_summary.json")
@@ -358,6 +461,9 @@ def _build_metrics_and_details(out_dir: str, skill_convention: str) -> Tuple[Dic
             "solution_py": _read(os.path.join(cdir, "solution.py"), 8000),
             "chatmessage_log": (_read(os.path.join(pdir, "conversation.json"), 8000)
                                 or _read(os.path.join(pdir, "claude_raw.txt"), 8000)),
+            # 新增：完整工具调用轨迹（single 模式从 claude 会话 jsonl 提取；其它模式为空）。
+            "tool_trajectory": (_tool_trajectory_for_task(out_dir, SUBMISSION_ID, tid)
+                                if TARGET_MODE == "single" else []),
             "input_xlsx": os.path.join(cdir, "input.xlsx"),
             "output_xlsx": os.path.join(cdir, "output.xlsx"),
             "spreadsheet_preview": (r.get("spreadsheet_preview") or "")[:2000],
