@@ -305,6 +305,15 @@ else
   log "FATAL: collected zero SKILL.md — not writing DONE. Sleeping (sidecar must not exit)."
 fi
 
+if [ -n "${OUTPUT_DIR:-}" ]; then
+  mkdir -p "$OUTPUT_DIR/algo"
+  [ -d "$XSKILL_SKILL_DIR" ] && cp -a "$XSKILL_SKILL_DIR" "$OUTPUT_DIR/algo/skill_repo" 2>/dev/null || true
+  cp -a "$DAEMON_LOG" "$OUTPUT_DIR/algo/" 2>/dev/null || true
+  cp -a /tmp/x_*.log "$OUTPUT_DIR/algo/" 2>/dev/null || true
+  cp -a "$SKILLS_OUT" "$OUTPUT_DIR/algo/skills_shipped" 2>/dev/null || true
+  echo "copied algo artifacts -> $OUTPUT_DIR/algo"
+fi
+
 # sidecar restartPolicy:Always —— 永不退出
 log "entrypoint reached steady state; sleep infinity"
 sleep infinity

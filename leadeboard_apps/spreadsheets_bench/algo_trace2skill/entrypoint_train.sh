@@ -61,5 +61,11 @@ else
   echo "FATAL: no evolved SKILL.md at $SKILL_SRC — not shipping. Sleeping (sidecar must not exit)."
 fi
 
+if [ -n "${OUTPUT_DIR:-}" ]; then
+  mkdir -p "$OUTPUT_DIR/algo"
+  cp -a "$RUN/." "$OUTPUT_DIR/algo/" 2>/dev/null || true
+  echo "copied algo artifacts -> $OUTPUT_DIR/algo"
+fi
+
 # sidecar restartPolicy:Always —— 永不退出
 sleep infinity

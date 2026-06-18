@@ -15,4 +15,10 @@ python scripts/train.py --config configs/spreadsheetbench/default.yaml \
 BEST=$(find "$RUN" -name best_skill.md | head -1)
 [ -s "$BEST" ] || { echo "FATAL: 无 best_skill.md"; sleep infinity; }
 cp "$BEST" "$SKILL_OUT/skill.md"; echo skillopt > "$SKILL_OUT/ALGO"; touch "$SKILL_OUT/DONE"
-echo "DONE: $SKILL_OUT/skill.md"; sleep infinity
+echo "DONE: $SKILL_OUT/skill.md"
+if [ -n "${OUTPUT_DIR:-}" ]; then
+  mkdir -p "$OUTPUT_DIR/algo"
+  cp -a "$RUN/." "$OUTPUT_DIR/algo/" 2>/dev/null || true
+  echo "copied algo artifacts -> $OUTPUT_DIR/algo"
+fi
+sleep infinity
