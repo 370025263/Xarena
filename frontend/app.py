@@ -884,7 +884,11 @@ def build_rank_table_html(rows, limit=None):
 # ======== 侧边栏 ========
 def render_sidebar():
     st.sidebar.title("导航")
-    st_auto(QUEUE_REFRESH_MS, key="auto_queue_sidebar", enable=True)
+    # ⚠️ 不要在 Agent 面板上跑队列自动刷新：它会在 Agent 流式输出（可能 >15s）中途
+    # 触发整页 rerun，打断 _stream_and_render 的阻塞循环，导致工具调用与回答被丢弃、
+    # 不写入 agent_chat（即“工具调用没打通”）。流式进行中也强制关闭。
+    _agent_active = (st.session_state.get("page") == "agent_panel") or st.session_state.get("agent_streaming", False)
+    st_auto(QUEUE_REFRESH_MS, key="auto_queue_sidebar", enable=not _agent_active)
 
     if st.sidebar.button("🏆 榜单广场", use_container_width=True,
                          type="primary" if st.session_state.page == "public_leaderboards" else "secondary"):
@@ -3311,7 +3315,10 @@ def render_my_submissions():
 
     # ✅ 核心：JS 组件完全独立于 Streamlit rerun，自己 poll、自己追加、自己滚动
     # 不需要 st_auto，不需要 cached_get_logfast，不需要任何 session_state buffer
-    html = _log_viewer_html(sid, PUBLIC_BASE_URL, st.session_state.get("token") or "")
+    # 浏览器端日志拉取走同源相对路径（API='' → /api/...），不把 PUBLIC_BASE_URL 域名
+    # 硬编码进页面；依赖前置代理在同源下代理 /api/（algo.xskill.wiki 的 nginx 即是）。
+    # 这样无论从哪个域名/隧道访问，日志请求都打到当前页面同源，不再触发跨域预检。
+    html = _log_viewer_html(sid, "", st.session_state.get("token") or "")
     components.html(html, height=700, scrolling=False)
 
 # ======== 管理榜单 ========
@@ -3759,6 +3766,7 @@ def render_agent_ui():
     ss.setdefault("agent_chat_keep", 100)
     ss.setdefault("agent_shortcuts", [])
     ss.setdefault("agent_shortcuts_loaded", False)
+    ss.setdefault("agent_streaming", False)
 
     st.title("🤖 Agent Chat")
 
@@ -4025,8 +4033,13 @@ def render_agent_ui():
         with st.chat_message("user"): st.markdown(user_text)
 
         # Assistant Msg
-        with st.chat_message("assistant"):
-            resp_txt, tools = _stream_and_render(user_text)
+        # 标记流式进行中，确保侧边栏队列自动刷新在本次回合内不会触发整页 rerun
+        ss["agent_streaming"] = True
+        try:
+            with st.chat_message("assistant"):
+                resp_txt, tools = _stream_and_render(user_text)
+        finally:
+            ss["agent_streaming"] = False
 
         if resp_txt is None:
             st.stop() # 报错停止
