@@ -1,0 +1,134 @@
+<!--
+  SpreadsheetBench 自定义结果视图（沙箱纯渲染器）
+  契约：平台在外层注入全局 DATA（= GET /api/submission/<id>/extra 的 JSON）。
+  本片段只读 DATA 并绘制 DOM；不持 token、不发网络请求。
+  所有注入文本一律用 textContent 转义（任务内容视为不可信）。
+-->
+<style>
+  :root { color-scheme: light; }
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, "PingFang SC", "Microsoft YaHei", sans-serif; background: #f5f6f8; color: #1f2328; }
+  .rv-wrap { padding: 14px; }
+  .rv-head { font-size: 13px; color: #57606a; margin: 0 0 12px; }
+  .rv-empty { padding: 40px; text-align: center; color: #8b949e; font-size: 15px; }
+  .rv-card { background: #fff; border: 1px solid #d0d7de; border-radius: 10px; padding: 14px 16px; margin: 0 0 14px; box-shadow: 0 1px 2px rgba(27,31,36,.04); }
+  .rv-card-top { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 10px; }
+  .rv-qid { font-weight: 600; font-size: 14px; }
+  .rv-badge { font-size: 12px; font-weight: 700; padding: 2px 9px; border-radius: 999px; letter-spacing: .3px; }
+  .rv-pass { background: #dafbe1; color: #1a7f37; border: 1px solid #aceebb; }
+  .rv-fail { background: #ffebe9; color: #cf222e; border: 1px solid #ff9492; }
+  .rv-meta { font-size: 12px; color: #57606a; display: flex; gap: 14px; flex-wrap: wrap; }
+  .rv-meta b { color: #1f2328; font-weight: 600; }
+  .rv-sec { margin-top: 12px; }
+  .rv-sec-title { font-size: 12px; font-weight: 600; color: #57606a; text-transform: uppercase; letter-spacing: .4px; margin: 0 0 6px; }
+  .rv-pre { margin: 0; padding: 10px 12px; background: #f6f8fa; border: 1px solid #eaeef2; border-radius: 8px; font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace; font-size: 12.5px; line-height: 1.5; white-space: pre-wrap; word-break: break-word; max-height: 360px; overflow: auto; }
+  .rv-text { margin: 0; padding: 10px 12px; background: #fbfcfd; border: 1px solid #eaeef2; border-radius: 8px; font-size: 13px; line-height: 1.55; white-space: pre-wrap; word-break: break-word; max-height: 320px; overflow: auto; }
+  details.rv-sec > summary { cursor: pointer; font-size: 12px; font-weight: 600; color: #0969da; user-select: none; list-style: revert; }
+  details.rv-sec > summary:hover { text-decoration: underline; }
+  details.rv-sec[open] > summary { margin-bottom: 6px; }
+  .rv-fail-reason { color: #cf222e; font-size: 12.5px; margin-top: 6px; }
+</style>
+
+<div class="rv-wrap" id="rv-root"></div>
+
+<script>
+(function () {
+  var root = document.getElementById("rv-root");
+  var data = (typeof DATA !== "undefined" && DATA) ? DATA : { count: 0, items: [] };
+  var items = Array.isArray(data.items) ? data.items : [];
+
+  function el(tag, cls, txt) {
+    var n = document.createElement(tag);
+    if (cls) n.className = cls;
+    if (txt !== undefined && txt !== null) n.textContent = String(txt);
+    return n;
+  }
+
+  // 头部
+  var head = el("div", "rv-head",
+    "提交 #" + (data.submission_id != null ? data.submission_id : "?") +
+    " · 共 " + (data.count != null ? data.count : items.length) + " 题");
+  root.appendChild(head);
+
+  if (!data.count || data.count === 0 || items.length === 0) {
+    root.appendChild(el("div", "rv-empty", "无结果明细"));
+    return;
+  }
+
+  function addSection(card, title, value, opts) {
+    if (value === undefined || value === null || String(value).length === 0) return;
+    opts = opts || {};
+    if (opts.collapsible) {
+      var det = el("details", "rv-sec");
+      var sum = el("summary", null, title);
+      det.appendChild(sum);
+      det.appendChild(el("pre", opts.code ? "rv-pre" : "rv-text", value));
+      card.appendChild(det);
+    } else {
+      var sec = el("div", "rv-sec");
+      sec.appendChild(el("div", "rv-sec-title", title));
+      sec.appendChild(el("pre", opts.code ? "rv-pre" : "rv-text", value));
+      card.appendChild(sec);
+    }
+  }
+
+  items.forEach(function (it) {
+    var extra = (it && it.extra) ? it.extra : {};
+    var card = el("div", "rv-card");
+
+    // 顶栏：question_id + PASS/FAIL + cases
+    var top = el("div", "rv-card-top");
+    top.appendChild(el("span", "rv-qid",
+      "题目 " + (it.question_id != null ? it.question_id : "—")));
+
+    var pass = !!it.is_correct;
+    top.appendChild(el("span", "rv-badge " + (pass ? "rv-pass" : "rv-fail"),
+      pass ? "PASS" : "FAIL"));
+
+    var meta = el("div", "rv-meta");
+    if (extra.n_pass != null || extra.n_cases != null) {
+      var c = el("span", null);
+      c.appendChild(el("b", null, "cases "));
+      c.appendChild(document.createTextNode(
+        (extra.n_pass != null ? extra.n_pass : "?") + "/" +
+        (extra.n_cases != null ? extra.n_cases : "?")));
+      meta.appendChild(c);
+    }
+    if (extra.instruction_type) {
+      var t = el("span", null);
+      t.appendChild(el("b", null, "type "));
+      t.appendChild(document.createTextNode(String(extra.instruction_type)));
+      meta.appendChild(t);
+    }
+    if (extra.mode) {
+      var m = el("span", null);
+      m.appendChild(el("b", null, "mode "));
+      m.appendChild(document.createTextNode(String(extra.mode)));
+      meta.appendChild(m);
+    }
+    if (extra.model) {
+      var mo = el("span", null);
+      mo.appendChild(el("b", null, "model "));
+      mo.appendChild(document.createTextNode(String(extra.model)));
+      meta.appendChild(mo);
+    }
+    top.appendChild(meta);
+    card.appendChild(top);
+
+    if (extra.fail_reason) {
+      card.appendChild(el("div", "rv-fail-reason", "失败原因：" + String(extra.fail_reason)));
+    }
+
+    // 任务说明
+    addSection(card, "任务说明 (task.md)", extra.task_md, { code: false });
+    // 解题代码
+    addSection(card, "解题代码 (solution.py)", extra.solution_py, { code: true });
+    // 表格预览
+    addSection(card, "表格预览", extra.spreadsheet_preview, { code: true });
+    // 求解轨迹（可折叠）
+    addSection(card, "求解轨迹 (chat log)", extra.chatmessage_log, { code: true, collapsible: true });
+
+    root.appendChild(card);
+  });
+})();
+</script>

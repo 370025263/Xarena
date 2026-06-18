@@ -1,0 +1,6 @@
+# 测试用评测镜像：在已重建的 single 基础镜像上叠加榜单自定义结果视图插件。
+# 只有本测试镜像携带 result_view.html；生产 single 镜像保持无插件。
+# BASE 由 build_test.sh 传入：默认指向 mini5（5 题，验收快）。
+ARG BASE=localhost:5000/l_creator/spreadsheet-eval-single:latest
+FROM ${BASE}
+COPY result_view.html /app/result_view.html

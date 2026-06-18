@@ -170,13 +170,16 @@ def _post_failure(reason: str):
         _log(f"CRITICAL: 回传失败状态时出错: {e}")
 
 
-def _post_metrics(metrics: Dict[str, Any], eval_details: Optional[List[Dict[str, Any]]] = None):
+def _post_metrics(metrics: Dict[str, Any], eval_details: Optional[List[Dict[str, Any]]] = None,
+                  result_view_html: Optional[str] = None):
     assert SUBMISSION_ID, "SUBMISSION_ID env is required"
     url = f"{API_INTERNAL_URL}/api/internal/submission/{SUBMISSION_ID}/score"
     payload: Dict[str, Any] = {"metrics": metrics, "status": "Succeeded"}
     if eval_details is not None:
         payload["eval_details"] = eval_details
         metrics["eval_details"] = eval_details
+    if result_view_html:
+        payload["result_view_html"] = result_view_html
     safe_payload = _sanitize_for_json(payload)
     _log(f"POST metrics => {url} : {json.dumps(safe_payload, ensure_ascii=False)[:1500]}...")
     resp = SESSION.post(url, headers={"Content-Type": "application/json"},
@@ -403,7 +406,20 @@ def main():
     conv, skill_path = _wait_for_skill()
     out_dir = _run_eval(conv, skill_path)
     metrics, eval_details = _build_metrics_and_details(out_dir, conv)
-    _post_metrics(metrics, eval_details=eval_details)
+
+    # 榜单自定义结果视图（可选）：镜像里若烘焙了 /app/result_view.html 就随 /score 回传。
+    # 生产单评测镜像不含该文件时为 no-op，行为不变。
+    _result_view_html = None
+    _rv_path = "/app/result_view.html"
+    if os.path.isfile(_rv_path):
+        try:
+            with open(_rv_path, "r", encoding="utf-8") as _f:
+                _result_view_html = _f.read()
+            _log(f"loaded custom result view ({len(_result_view_html)} bytes)")
+        except Exception as e:
+            _log(f"WARN: read {_rv_path} failed: {e}")
+
+    _post_metrics(metrics, eval_details=eval_details, result_view_html=_result_view_html)
 
     # 通用产物落盘：把本次评测 run 目录拷到 $OUTPUT_DIR/eval（不耦合 phase）。
     _out_base = os.environ.get("OUTPUT_DIR", "").strip()
@@ -413,6 +429,9 @@ def main():
             os.makedirs(_dst, exist_ok=True)
             subprocess.run(["cp", "-a", out_dir + "/.", _dst], check=False)
             _log(f"copied eval artifacts -> {_dst}")
+            if os.path.isfile(_rv_path):
+                subprocess.run(["cp", _rv_path, _dst + "/"], check=False)
+                _log(f"copied custom result view -> {_dst}")
         except Exception as e:
             _log(f"WARN: copy eval artifacts failed: {e}")
 
