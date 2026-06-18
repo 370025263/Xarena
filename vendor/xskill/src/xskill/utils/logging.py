@@ -2,6 +2,20 @@
 utils/logging.py — StreamLog 流式日志 + 按 component 拆分文件日志
 =================================================================
 
+日志设计约定（best practice）
+------------------------------
+1. **库只 log、入口配置**：各模块用 ``getLogger("xskill.<component>")`` 直接打日志，
+   handler / level / 落盘**只**在这里的 ``configure_logging`` 配置。
+2. **level 是语义不是路由**：
+   - DEBUG —— 排查用细节（默认关，``--debug`` 才开）。
+   - INFO  —— 正常运行里程碑（split 开始/完成、cluster 结果、install、灰度决策）。
+   - WARNING —— 可恢复异常（atom 被 drop、重试、限流）。
+   - ERROR / exception —— 失败。
+3. **永不产空文件**：file handler 用 ``delay=True``——文件只在第一次真写入时创建。
+   所以"声明了文件但 logger 不写"的死/事件型 logger **不会**留下 0 字节空 .log。
+4. **一份汇总 + 按需分组**：``xskill.log`` 是全 ``xskill.*`` 合并视图（真源）；
+   其余分组文件（watcher/server/canary/ecosystems/skill_edit）是便利,懒创建。
+
 StreamLog —— 带前缀的流式日志，方便 grep 和观测。
 
 按 component 把 logging 拆到独立文件
@@ -61,23 +75,29 @@ class StreamLog:
                         encoding="utf-8")
 
 
-# 每个 namespace 单独一个 file handler；其余 logger 走 root（→ xskill.log）。
-# 写在这里方便统一加/减组件。
+# 每个 namespace 单独一个 file handler；其余 xskill.* 子 logger 不单开文件，
+# 靠 propagate 冒泡进 xskill.log 汇总视图。
+#
+# 约定：**只给真会写 INFO 的 logger 单开文件**，否则就是永远空的死文件。
+#   - 关键教训（实测踩坑）：task_agent / task_cluster_agent 这两个 agent 源码里
+#     **一句 logger 都不打**——拆分/聚类的运行日志全在 runner.py 的 xskill.watcher
+#     名下；ux_score / registry 也只在解析失败时打 WARNING，平时无 INFO。给它们
+#     单开文件 = 一堆 0 字节空 .log。故**不给它们单开文件**，让其冒泡进 xskill.log。
+#   - 真会写 INFO 的才单开：流水线(watcher) / server / 灰度(canary) / 生态
+#     (ecosystems) / SkillEdit(只在真出 edit 时写,事件型) 。
+#   - 非 xskill 命名空间的第三方（agno / httpx）单独隔离免污染。
 _PER_LOGGER_FILES: dict[str, str] = {
-    "xskill.watcher":    "xskill.watcher.log",
-    "xskill.server":     "xskill.server.log",
-    "xskill":            "xskill.log",              # 兜底（含其它子 logger）
-    "xskill.canary":     "xskill.canary.log",
-    "xskill.ux_score":   "xskill.ux_score.log",
-    "xskill.ecosystems": "xskill.ecosystems.log",
-    "xskill.registry":   "xskill.registry.log",
-    "ux_score":          "xskill.ux_score.log",     # src/xskill/ux_score.py 用 "ux_score"
-    "skill_tools":       "xskill.agents.skill_tools.log",
-    "git_lock":          "xskill.git_lock.log",
-    "agno":              "agno.log",                # agno 内部，单独隔离免污染
-    "httpx":             "httpx.log",
-    "httpcore":          "httpx.log",
-    "openai":            "httpx.log",
+    "xskill":                    "xskill.log",        # 全 xskill.* 合并视图（兜底）
+    "xskill.watcher":            "xskill.watcher.log",
+    "xskill.process":            "xskill.watcher.log",  # 同属流水线，并入 watcher
+    "xskill.server":             "xskill.server.log",
+    "xskill.canary":             "xskill.canary.log",
+    "xskill.ecosystems":         "xskill.ecosystems.log",
+    "xskill.skill_edit_agent":   "xskill.skill_edit_agent.log",  # 事件型,出 edit 才写
+    "agno":                      "agno.log",          # agno 内部，单独隔离免污染
+    "httpx":                     "httpx.log",
+    "httpcore":                  "httpx.log",
+    "openai":                    "httpx.log",
 }
 
 # 日常 noisy 但不重要的 logger 默认 WARNING，避免 xskill.log 被淹
@@ -142,17 +162,26 @@ def configure_logging(
     # 都会冒泡到 root 进 xskill.log；root 上不挂 file，只挂 stdout。
     # xskill.log 这份汇总文件挂在 logger="xskill" 上，下面所有 xskill.*
     # 都会经过它。
+    # 多个 logger 可能映射到同一文件（如 xskill.process + xskill.watcher 都进
+    # xskill.watcher.log）——按文件路径去重复用同一个 handler 对象，避免两个
+    # RotatingFileHandler 指同一文件时 rollover 互相打架。
+    _handler_by_path: dict[Path, logging.Handler] = {}
     for name, fname in _PER_LOGGER_FILES.items():
         fpath = logs_dir / fname
-        fh = logging.handlers.RotatingFileHandler(
-            fpath,
-            maxBytes=rotate_max_bytes,
-            backupCount=rotate_backups,
-            encoding="utf-8",
-        )
-        fh.setLevel(root_level)
-        fh.setFormatter(common_fmt)
-        fh._xskill_managed = True  # type: ignore[attr-defined]
+        fh = _handler_by_path.get(fpath)
+        if fh is None:
+            fh = logging.handlers.RotatingFileHandler(
+                fpath,
+                maxBytes=rotate_max_bytes,
+                backupCount=rotate_backups,
+                encoding="utf-8",
+                delay=True,   # 关键：文件只在**第一次真写入**时才创建——
+                              # 没写过的 logger(死/事件型)就不落盘,从根上杜绝空 .log。
+            )
+            fh.setLevel(root_level)
+            fh.setFormatter(common_fmt)
+            fh._xskill_managed = True  # type: ignore[attr-defined]
+            _handler_by_path[fpath] = fh
         logger = logging.getLogger(name)
         logger.addHandler(fh)
         logger.setLevel(root_level)

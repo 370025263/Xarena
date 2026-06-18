@@ -1221,7 +1221,7 @@ def create_app(home_root: Path | str | None = None,
                 skill_dir=_skill_dir,
                 poll_interval=float(watcher_cfg.get("poll_interval", 30)),
                 max_concurrent=int(watcher_cfg.get("max_concurrent", 30)),
-                cold_start_threshold=int(watcher_cfg.get("cold_start_threshold", 3)),
+                cluster_batch_size=int(watcher_cfg.get("cluster_batch_size", 8)),
                 server_mode=team_server,
                 on_poll_hook=_ensure_ingesters_for_detected_ecosystems,
             )

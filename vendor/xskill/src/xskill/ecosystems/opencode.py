@@ -208,6 +208,7 @@ class SqliteIngester:
         home_root: Path | str | None = None,
         spec: SqliteEcosystemSpec = OPENCODE_SPEC,
         poll_interval: float = 10.0,
+        db_path: Path | str | None = None,
     ):
         if spec.source_kind != "sqlite":
             raise ValueError(
@@ -218,6 +219,10 @@ class SqliteIngester:
         self.home_root = Path(home_root) if home_root else Path.home()
         self.spec = spec
         self.poll_interval = poll_interval
+        # 显式 db 文件覆盖（`xskill read <PATH>` / 上传入库用）：给定时不走
+        # spec.path_resolver 的固定家目录路径，而读这个任意位置的 db 文件。
+        # 给 None 则回退到 spec 解析（daemon 常驻扫本机固定路径，行为不变）。
+        self._db_path_override = Path(db_path) if db_path else None
         # cursor: 上次见过的 session.time_updated 最大值（毫秒，OpenCode 用 epoch ms）
         self._cursor_ms: int = 0
         # 已桥接过的 session id（重启后由 _scan_seen_sessions 重建——同 CC 思路）
@@ -289,7 +294,9 @@ class SqliteIngester:
 
     @property
     def db_path(self) -> Path:
-        """spec 解析后的 DB 绝对路径。"""
+        """DB 绝对路径：显式 override 优先，否则按 spec 解析家目录固定路径。"""
+        if self._db_path_override is not None:
+            return self._db_path_override
         return self.spec.path_resolver(self.home_root)
 
     @property

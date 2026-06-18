@@ -1,0 +1,114 @@
+{
+  "c03_huge_preamble": {
+    "boundaries": [],
+    "covered_eof": false,
+    "n_atoms": 0,
+    "error": null
+  },
+  "c05_single_atom": {
+    "boundaries": [],
+    "covered_eof": true,
+    "n_atoms": 1,
+    "error": null
+  },
+  "c00_subtle_followup": {
+    "boundaries": [],
+    "covered_eof": true,
+    "n_atoms": 1,
+    "error": null
+  },
+  "c06_rapid_debug": {
+    "boundaries": [],
+    "covered_eof": true,
+    "n_atoms": 1,
+    "error": null
+  },
+  "c01_disguised_intent": {
+    "boundaries": [
+      8,
+      14,
+      20
+    ],
+    "covered_eof": true,
+    "n_atoms": 4,
+    "error": null
+  },
+  "c09_voice_noise": {
+    "boundaries": [
+      13
+    ],
+    "covered_eof": true,
+    "n_atoms": 2,
+    "error": null
+  },
+  "c04_adversarial_marker": {
+    "boundaries": [],
+    "covered_eof": true,
+    "n_atoms": 1,
+    "error": null
+  },
+  "c07_undo_revert": {
+    "boundaries": [
+      7,
+      13
+    ],
+    "covered_eof": true,
+    "n_atoms": 3,
+    "error": null
+  },
+  "c11_interleaved": {
+    "boundaries": [
+      13
+    ],
+    "covered_eof": true,
+    "n_atoms": 2,
+    "error": null
+  },
+  "c08_no_user_long_tail": {
+    "boundaries": [
+      7
+    ],
+    "covered_eof": true,
+    "n_atoms": 2,
+    "error": null
+  },
+  "c12_normal_two": {
+    "boundaries": [
+      8
+    ],
+    "covered_eof": true,
+    "n_atoms": 2,
+    "error": null
+  },
+  "c02_oversized_intent": {
+    "boundaries": [],
+    "covered_eof": false,
+    "n_atoms": 1,
+    "error": null
+  },
+  "c10_topic_drift": {
+    "boundaries": [],
+    "covered_eof": true,
+    "n_atoms": 1,
+    "error": null
+  },
+  "c13_normal_three": {
+    "boundaries": [
+      13,
+      19
+    ],
+    "covered_eof": true,
+    "n_atoms": 3,
+    "error": null
+  },
+  "c14_normal_four": {
+    "boundaries": [
+      7,
+      13,
+      19
+    ],
+    "covered_eof": true,
+    "n_atoms": 4,
+    "error": null
+  }
+}

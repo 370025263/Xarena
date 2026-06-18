@@ -40,7 +40,7 @@ from xskill.utils.llm import create_embed_client
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(message)s",
                     datefmt="%H:%M:%S")
-logger = logging.getLogger("search")
+logger = logging.getLogger("xskill.search")
 
 
 _WORD_RE = re.compile(r"[\w]+", re.UNICODE)

@@ -27,7 +27,7 @@ from sse_starlette.sse import EventSourceResponse
 from xskill.config import load_config, get_skill_dir, get_traj_dir
 from xskill.utils.llm import create_llm_client, create_embed_client
 
-logger = logging.getLogger("tasks")
+logger = logging.getLogger("xskill.tasks")
 
 # ---------------------------------------------------------------------------
 # Thread pool shared across all SSE endpoints

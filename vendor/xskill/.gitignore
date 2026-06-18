@@ -68,3 +68,8 @@ Thumbs.db
 
 # Claude Code IDE 工作目录（本地 settings + 临时 worktree）
 /.claude/
+
+# bench 真实轨迹标注/基线(含内部项目名,仅本机)
+scripts/bench/real/
+scripts/bench/baseline_window.json
+scripts/bench/baseline_window.md

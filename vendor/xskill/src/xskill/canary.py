@@ -33,7 +33,7 @@ from typing import Optional
 
 from xskill.skill.git import run_git, skill_repo_lock
 
-logger = logging.getLogger("canary")
+logger = logging.getLogger("xskill.canary")
 
 STAGING_BRANCH = "staging"
 UX_SCORES_FILENAME = ".ux_scores.jsonl"

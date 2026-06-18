@@ -29,6 +29,7 @@ from xskill.ecosystems._shared import (
     JsonlIngester,
     # detection
     detect_known_ecosystems,
+    bridge_dir_for,
     # adapt / submit dispatch layer
     adapt_trajectory,
     submit_trajectory,
@@ -102,10 +103,18 @@ from xskill.ecosystems.ngagent import (
     _ngagent_skills_path,
 )
 
+# sqlite-back 生态 id → spec 映射（`xskill read` / 上传入库按 --eco 选 spec）。
+# 只含 source_kind="sqlite" 的生态；JSONL 生态（cc/codex/...）不在此表。
+SQLITE_SPEC_BY_ECO: dict = {
+    "opencode": OPENCODE_SPEC,
+    "ngagent": NGAGENT_SPEC,
+}
+
 __all__ = [
     "EcosystemSpec", "SqliteEcosystemSpec",
     "CC_SPEC", "CODEX_SPEC", "OPENCLAW_SPEC", "CURSOR_SPEC", "OPENCODE_SPEC",
     "NGAGENT_SPEC",
+    "SQLITE_SPEC_BY_ECO", "bridge_dir_for",
     "JsonlIngester", "SqliteIngester", "CCSessionIngester",
     "detect_known_ecosystems",
     "install_to_claude_code", "install_to_codex", "install_to_cursor",

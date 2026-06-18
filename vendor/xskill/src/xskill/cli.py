@@ -18,6 +18,7 @@ import sys
 
 from xskill import __version__
 from xskill.config import set_overrides
+from xskill.ecosystems import SQLITE_SPEC_BY_ECO
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -38,7 +39,23 @@ def cmd_serve(args, xskill) -> int:
         if not home_root.is_dir():
             print(f"error: --home 目录不存在: {home_root}", file=sys.stderr)
             return 2
-    from xskill.runtime import write_running
+    from xskill.runtime import read_status, write_running
+    # ── 单实例守卫：已有活 daemon 时拒绝启动 ──
+    # 双 daemon 会抢同一 registry（rebuild 后旧 daemon 可能用旧模型抢先处理）。
+    # read_status 已校验 pid 存活，陈旧运行态文件不会误拦。--force 强行接管。
+    status = read_status()
+    if status.get("running") and not args.force:
+        print(
+            f"✗ 已有 xskill daemon 在运行（pid {status.get('pid')}, "
+            f"端口 {status.get('port')}）。",
+            file=sys.stderr,
+        )
+        print(
+            "  双 daemon 会抢同一 registry，导致换模型 rebuild 被旧 daemon 抢去用旧"
+            "模型处理。\n  先停掉它再起；确认要强行接管可加 --force。",
+            file=sys.stderr,
+        )
+        return 2
     write_running(port=args.port, mode="server" if args.server else "standalone")
     xskill.serve(host=args.host, port=args.port, home_root=home_root,
                  server_mode=args.server)
@@ -116,14 +133,22 @@ def cmd_registry_list_client() -> int:
     """
     import json
     from pathlib import Path
-    from xskill.config import XSKILL_HOME
+    from xskill.config import (
+        XSKILL_HOME, get_team_client_state_path, get_team_client_cursor_path,
+    )
     from xskill.ecosystems import detect_known_ecosystems
+    from xskill.team.client.state import load_client_state
 
     home = XSKILL_HOME.parent  # 与 XSKILL_HOME 同源,避免 home 解析漂移
-    cursor_path = XSKILL_HOME / "team_client_cursor.json"
+    # 游标按 server 分目录（方案 A）——先读连接状态拿 server_url 才能定位。
+    # 没连过 server（无 state）则没有任何上传游标，uploaded 全 0。
     uploaded_ids: set[str] = set()
-    if cursor_path.is_file():
-        uploaded_ids = set(json.loads(cursor_path.read_text(encoding="utf-8")))
+    state_path = get_team_client_state_path()
+    if state_path.is_file():
+        cursor_path = get_team_client_cursor_path(
+            load_client_state(state_path).server_url)
+        if cursor_path.is_file():
+            uploaded_ids = set(json.loads(cursor_path.read_text(encoding="utf-8")))
 
     dets = detect_known_ecosystems(home_root=home)
     if not dets:
@@ -149,7 +174,10 @@ def cmd_connect(args) -> int:
     ``xskill connect``                          复用已存连接
     """
     import socket as _socket
-    from xskill.config import get_team_client_state_path, XSKILL_HOME
+    from xskill.config import (
+        get_team_client_state_path, XSKILL_HOME,
+        get_team_client_cursor_path, get_team_client_history_path,
+    )
     from xskill.team.client.state import (
         ClientState, load_client_state, save_client_state,
     )
@@ -211,28 +239,42 @@ def cmd_connect(args) -> int:
 
     # skill working copies 复用标准 skill_dir（~/.xskill/skill/）——瘦客户端
     # 没有 config.yaml，直接用默认路径，不走 get_skill_dir()（那会 load_config）。
+    # 游标 / 去抖 / 安装历史按 server 分目录（方案 A）——换 server 不再被上一个
+    # server 的"已上传"游标静默压制对新 server 的上传。skill 工作副本仍复用共享
+    # 的 skill_dir（cleanup 已按 manifest 摘除旧 server 的残留 skill）。
     client = TeamClient(
         state=state, http=http,
         skill_dir=XSKILL_HOME / "skill",
-        cursor_path=XSKILL_HOME / "team_client_cursor.json",
-        history_path=XSKILL_HOME / "install_history.jsonl",
+        cursor_path=get_team_client_cursor_path(state.server_url),
+        history_path=get_team_client_history_path(state.server_url),
     )
     client.run_forever()   # 阻塞
     return 0
 
 
 def cmd_stats(args) -> int:
-    """token/成本统计。直接读 registry(~/.xskill/registry.db),不需要 config/facade。"""
+    """token/成本统计。直接读 registry(~/.xskill/registry.db)。
+
+    模型分布的 unknown 兜底标签复用 config 的 ``dashboard.default_model``——与看板
+    口径一致，让"没记到模型名"的存量轨迹在 stats 里也归到指定模型而非 unknown。
+    经 ``dashboard_attribution_defaults`` 读取：只看 dashboard 段、不校验
+    llm/embedding key，config.yaml 缺失则退 'unknown'，瘦客户端无 config 也能用。
+    纯展示——不改库里真实值、不影响 canary（灰度走 runner 里另一条默认 unknown 的
+    路径，与此互不串）。
+    """
     import json as _json
     import time
+    from xskill.config import dashboard_attribution_defaults
     from xskill.pipeline.registry import model_share, usage_summary
     from xskill.runtime import read_status
     from xskill.usage import render_stats
 
+    unknown_model = dashboard_attribution_defaults()["model"]
+
     def _emit() -> None:
         s = usage_summary()
         st = read_status()
-        ms = model_share()
+        ms = model_share(unknown_label=unknown_model)
         if args.json:
             print(_json.dumps({"status": st, "cost": s, "models": ms},
                               ensure_ascii=False, indent=2))
@@ -277,6 +319,79 @@ def cmd_search(args, xskill) -> int:
     return 1
 
 
+def cmd_read(args, xskill) -> int:
+    """`xskill read <PATH> --eco ngagent` —— 批量把 db 文件桥接入库。"""
+    from xskill.pipeline.db_ingest import read_db_files
+    try:
+        summary = read_db_files(
+            args.path,
+            eco=args.eco,
+            register=not args.no_register,
+            recursive=args.recursive,
+        )
+    except (FileNotFoundError, ValueError) as e:
+        print(f"error: {e}", file=sys.stderr)
+        return 2
+    print(
+        f"read: {len(summary['db_files'])} db 文件 → 桥接 {summary['bridged']} "
+        f"条轨迹到 {summary['target_dir']}"
+    )
+    if not args.no_register:
+        print("已注册为 watch_dir —— 启动 `xskill serve` 后将自动拆分入库。")
+    return 0
+
+
+def cmd_rebuild(args, xskill) -> int:
+    """`xskill rebuild [--force]` —— 用现有原始轨迹重跑蒸馏。
+
+    默认：删除已拆 atom + index.pkl、轨迹状态翻回 discovered，让运行中的 watcher
+    从头重拆重聚（删 atom 是真正触发重拆的动作——splitter 续接点取自 atom 文件，
+    不读 DB offset）。``--force``：额外先清空 skill 仓（删除重建）。
+
+    换模型护栏：rebuild 的重跑是交给**正在运行的 daemon**，而 daemon 的模型是
+    启动时缓存的（改 config 不重启不生效）。若 daemon 在跑且其模型 ≠ 当前 config
+    模型 → 默认拒绝并提示先重启 serve，否则会静默用旧模型重生成（`--ignore-
+    model-mismatch` 可强行用当前运行的模型重跑）。
+    """
+    from xskill.pipeline.registry import reset_trajectories
+    from xskill.runtime import config_models, read_status
+
+    # ── 换模型护栏（先于任何清仓/重置）──
+    status = read_status()
+    if status.get("running") and not args.ignore_model_mismatch:
+        daemon_model = status.get("llm_model")
+        cfg_model = config_models().get("llm_model")
+        if daemon_model != cfg_model:
+            print(
+                f"✗ 运行中的 daemon 在用模型 {daemon_model!r}，但 config.yaml "
+                f"现在是 {cfg_model!r}。",
+                file=sys.stderr,
+            )
+            print(
+                "  daemon 的模型是启动时缓存的——直接 rebuild 会用旧模型重生成。\n"
+                "  换模型请先干净重启：停掉 serve（确认进程真退了）→ 重新 "
+                "`xskill serve` → 再 rebuild。\n"
+                "  确认就是要用当前运行的模型重跑，可加 --ignore-model-mismatch。",
+                file=sys.stderr,
+            )
+            return 2
+
+    if args.force:
+        from xskill.config import get_skill_dir
+        from xskill.skill.repo import SkillRepo
+        n_skills = SkillRepo(get_skill_dir()).wipe_all_skills()
+        print(f"--force: 清空 skill 仓（删 {n_skills} 个 skill）")
+
+    n = reset_trajectories(eco=args.eco, traj_id=args.traj)
+    print(f"rebuild: 重置 {n} 条轨迹（已删 atom + index.pkl，将从头重拆）")
+
+    if read_status().get("running"):
+        print("watcher 运行中 —— 30s 内将自动重跑这些轨迹。")
+    else:
+        print("⚠ 未检测到运行中的 daemon —— 请 `xskill serve` 启动后才会重跑。")
+    return 0
+
+
 # ═══════════════════════════════════════════════════════════════
 # argparse
 # ═══════════════════════════════════════════════════════════════
@@ -311,6 +426,10 @@ def build_parser() -> argparse.ArgumentParser:
         "--server", action="store_true",
         help="team server 模式：收 client 上传轨迹、跑全部 agent、"
              "提供 /api/v1/team/* 同步接口。不加则 standalone（仅本机）。",
+    )
+    p_serve.add_argument(
+        "--force", action="store_true",
+        help="已有 daemon 在跑时强行接管（默认拒绝启动，防双 daemon 抢 registry）",
     )
 
     p_reg = sub.add_parser("registry", help="Manage watched directories")
@@ -350,6 +469,35 @@ def build_parser() -> argparse.ArgumentParser:
     p_stats.add_argument("--json", action="store_true", help="机读 JSON 输出")
     p_stats.add_argument("--watch", action="store_true",
                          help="htop 式整屏刷新（每 2s）")
+
+    p_read = sub.add_parser(
+        "read", help="批量从指定位置读取 db 文件并入库（ngagent/opencode）",
+    )
+    p_read.add_argument("path", type=str,
+                        help="db 文件，或包含 db 文件的目录")
+    p_read.add_argument("--eco", default="ngagent",
+                        choices=sorted(SQLITE_SPEC_BY_ECO),
+                        help="db 所属生态（默认 ngagent）")
+    p_read.add_argument("--recursive", "-r", action="store_true",
+                        help="目录模式下递归查找 *.db")
+    p_read.add_argument("--no-register", action="store_true",
+                        help="只桥接不注册 watch_dir（一般不用）")
+
+    p_rebuild = sub.add_parser(
+        "rebuild", help="用现有原始轨迹重跑蒸馏（换强模型重生成 skill）",
+    )
+    p_rebuild.add_argument(
+        "--force", action="store_true",
+        help="先清空 skill 仓 + 已拆原子再全量重跑（删除重建）",
+    )
+    p_rebuild.add_argument("--eco", default=None,
+                           help="只重跑某生态的轨迹（默认全部）")
+    p_rebuild.add_argument("--traj", default=None,
+                           help="只重跑某条轨迹 id（调试用）")
+    p_rebuild.add_argument(
+        "--ignore-model-mismatch", action="store_true",
+        help="跳过'daemon 模型≠config 模型'护栏，用当前运行的模型重跑",
+    )
 
     return p
 
@@ -407,6 +555,13 @@ def main() -> int:
     # stats 只读 registry，不需要 config.yaml / llm.api_key / facade
     if args.command == "stats":
         return cmd_stats(args)
+
+    # read / rebuild 只动 registry + 文件，不需要 llm.api_key / facade——
+    # 重跑由运行中的 watcher 完成，本命令只做"重置/桥接"。
+    if args.command == "read":
+        return cmd_read(args, None)
+    if args.command == "rebuild":
+        return cmd_rebuild(args, None)
 
     # team 客户端的 `registry list`：本机是 client（有 team_client.json）且没有
     # standalone 数据（watch_dirs 为空）时，改走现算视图。放在 config/facade

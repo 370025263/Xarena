@@ -1,0 +1,5 @@
+The following skill description is over the 1024-character limit:
+
+{description}
+
+Rewrite it to be under 1024 characters while keeping the most important trigger words and intent coverage. Respond with only the rewritten description in <new_description> tags.

@@ -35,6 +35,15 @@ def _models() -> dict:
             "embed_model": emb.get("model")}
 
 
+def config_models() -> dict:
+    """当前 config.yaml 里写的处理模型（不是 daemon 正在用的那份）。
+
+    供 ``xskill rebuild`` 与运行态文件里 daemon 启动时记录的模型对比——不一致
+    说明 daemon 还在用旧模型，换模型重蒸馏前必须先重启 serve。
+    """
+    return _models()
+
+
 def write_running(*, port: int, mode: str) -> None:
     """serve 启动时调用,登记本进程;注册 atexit 自动清理。"""
     try:

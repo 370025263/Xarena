@@ -34,7 +34,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable, Iterable, Literal, Optional
 
-from xskill.config import get_traj_dir
+from xskill.config import get_traj_dir, ingest_config
 from xskill.ecosystems._fallback import (
     InstallMode, _is_link_or_junction, install_dir,
 )
@@ -182,6 +182,21 @@ _KNOWN_ECOSYSTEMS: list[dict] = [
         "source_kind": "dir",
     },
 ]
+
+
+def bridge_dir_for(eco_id: str, home_root: Path | str | None = None) -> Path:
+    """某生态 bridged 轨迹的落盘目录（``<home>/.xskill/<eco>_sessions``）。
+
+    ``xskill read`` / 上传入库把 db 桥成的 ``traj_*.md`` 写到这里——与 daemon
+    常驻 ingester 用同一个目录，watcher 注册后即可统一捡起。eco_id 未知直接抛
+    （CLAUDE.md：不兜底）。
+    """
+    home = Path(home_root) if home_root else Path.home()
+    for e in _KNOWN_ECOSYSTEMS:
+        if e["id"] == eco_id:
+            return home / e["bridge_subpath"]
+    known = ", ".join(e["id"] for e in _KNOWN_ECOSYSTEMS)
+    raise ValueError(f"unknown ecosystem {eco_id!r}; known: {known}")
 
 
 def detect_known_ecosystems(home_root: Path | str | None = None) -> list[dict]:
@@ -623,6 +638,7 @@ def submit_trajectory(
     metadata: Optional[dict] = None,
     traj_id: Optional[str] = None,
     traj_dir: Optional[Path] = None,
+    mask_patterns: Optional[list[str]] = None,
 ) -> dict:
     """
     Complete submission flow:
@@ -632,6 +648,10 @@ def submit_trajectory(
     3. Adapt the input format to standard markdown + JSON metadata.
     4. Write ``traj_{id}.md`` and optionally ``traj_{id}.json``.
     5. Return ``{"traj_id": ..., "path": ..., "status": "stored"}``.
+
+    ``mask_patterns``：去壳掩码正则列表；``None`` 时取 config 的
+    ``ingest.mask_patterns``（默认空 = 不替换）。命中段在写 md 之前替换为
+    占位符——剥掉评测 harness 的固定外壳，防聚类被任务外壳吸住。
     """
     traj_dir = Path(traj_dir) if traj_dir else get_traj_dir()
     traj_dir.mkdir(parents=True, exist_ok=True)
@@ -640,6 +660,17 @@ def submit_trajectory(
         traj_id = generate_traj_id(traj_dir)
 
     md_content, json_metadata = adapt_trajectory(content, format, metadata)
+
+    # 落盘前清洗：去 ANSI 转义 + 控制字符（终端/tool 原始输出常掺入），
+    # 保证 splitlines 行数 == \n 行数（atom offset 与人类行号一致）、不喂垃圾给模型。
+    from xskill.utils.sanitize import apply_mask_patterns, sanitize_trajectory_text
+    md_content = sanitize_trajectory_text(md_content)
+
+    # 去壳掩码：在入库转换阶段（写 md 之前）做，不在拆分阶段——落盘文本
+    # 本身已去壳，下游拆分/聚类/embedding 一律看不到外壳原文。
+    if mask_patterns is None:
+        mask_patterns = ingest_config()["mask_patterns"]
+    md_content = apply_mask_patterns(md_content, mask_patterns)
 
     # Write markdown
     md_path = traj_dir / f"{traj_id}.md"
@@ -696,6 +727,7 @@ class JsonlIngester:
         home_root: Path | str | None = None,
         poll_interval: float = 10.0,
         on_new_sessions: Callable[[list[dict]], None] | None = None,
+        settle_seconds: float | None = None,
     ):
         if spec.source_kind != "jsonl":
             # SQLite ingester 用单独的 SqliteIngester；早 fail 避免走错路。
@@ -707,6 +739,12 @@ class JsonlIngester:
         self.target_traj_dir = Path(target_traj_dir) if target_traj_dir else None
         self.home_root = Path(home_root) if home_root else None
         self.poll_interval = poll_interval
+        # 入库完成屏障（settle barrier）：源文件 mtime 距今 < settle 秒视为
+        # "还在写"，本轮跳过。None = 每次 scan 时从 config 的
+        # ingest.settle_seconds 读（daemon 长跑期间改配置即时生效，与
+        # detect_known_ecosystems 每轮实测同一设计）；显式传值用于测试 /
+        # SDK 调用方覆盖。
+        self.settle_seconds = settle_seconds
         # on_new_sessions: 可选 hook，每轮 scan 桥接到新 session 后调
         # 一次（参数是 submitted records）。openclaw 用这个 hook 做 canary
         # flip——发现新 session → pick_side → 跟 install_history 对比 →
@@ -816,8 +854,21 @@ class JsonlIngester:
             seen_sessions: 已处理 session id 集合；in-place 更新
 
         Returns:
-            每条新桥接 session 的 submission 结果（含 ``session_id`` /
-            ``source_jsonl`` / ``session_start_t``）
+            每条新桥接 / 重转换 session 的 submission 结果（含 ``session_id`` /
+            ``source_jsonl`` / ``session_start_t``；重转换的额外带
+            ``rebridged=True``）
+
+        入库完成屏障（settle barrier）：源文件 mtime 距今 < settle 秒的
+        session 视为"还在写"，本轮跳过（新 session 不入 seen，下轮重试）。
+        这是对"出现即读、按 sid 去重后永不回头"老行为的修 bug——session 刚
+        开跑文件刚出现就被整读定格，后续写完的内容无人回头重读。
+
+        续写重转换：已入库（sid ∈ seen 且 bridge 目录有对应 md）但源文件
+        mtime 晚于已桥接 md 的 mtime（= 转换之后源又增长），且已过 settle
+        期 → 用全量内容重新转换覆盖该 traj_*.md / .json，并经
+        ``reset_trajectories(traj_id=...)`` 重置该轨迹已拆出的 atom / 向量
+        索引 / DB 状态（等价 ``xskill rebuild --traj``），watcher 下轮从头
+        重拆。
         """
         target_traj_dir.mkdir(parents=True, exist_ok=True)
         root = Path(home_root) if home_root else Path.home()
@@ -825,12 +876,36 @@ class JsonlIngester:
         if not sessions_root.is_dir():
             return []
 
+        settle = (self.settle_seconds if self.settle_seconds is not None
+                  else ingest_config()["settle_seconds"])
+        now = time.time()
+        bridged_md = self._bridged_md_by_sid8(target_traj_dir)
+
         seen = seen_sessions if seen_sessions is not None else set()
         submitted: list[dict] = []
         for jsonl_path in sorted(sessions_root.glob(self.spec.sessions_glob)):
             sid = self.spec.session_id_from_path(jsonl_path)
-            if sid in seen:
+            try:
+                src_mtime = jsonl_path.stat().st_mtime
+            except OSError:
+                continue  # 扫描和写入竞态：文件刚被挪走，下轮再看
+            if settle > 0 and (now - src_mtime) < settle:
+                # 还在写（或刚停笔未满 settle）——本轮不碰，新旧一视同仁。
                 continue
+
+            rebridged = False
+            if sid in seen:
+                md_path = bridged_md.get(
+                    _sanitize_for_filename(sid, maxlen=8) or "nosid")
+                if md_path is None:
+                    continue  # 见过但 bridge 目录无 md（如 assignments 记录）→ 不回头
+                try:
+                    if src_mtime <= md_path.stat().st_mtime:
+                        continue  # 转换之后源没再增长——幂等跳过
+                except OSError:
+                    continue
+                rebridged = True  # 源在转换后又增长 → 全量重转换覆盖
+
             content = jsonl_path.read_text(encoding="utf-8", errors="ignore")
             if not content.strip():
                 continue
@@ -845,9 +920,34 @@ class JsonlIngester:
             result["source_jsonl"] = str(jsonl_path)
             result["session_start_t"] = _session_start_t(jsonl_path)
             result["ecosystem"] = self.spec.name
+            if rebridged:
+                result["rebridged"] = True
+                # 旧残骸轨迹拆出的 atom / 索引 / DB 状态作废，从头重拆。
+                # 函数内 import：registry 依赖 config，模块级 import 会成环。
+                from xskill.pipeline.registry import reset_trajectories
+                n = reset_trajectories(traj_id=traj_id)
+                logger.info(
+                    "JsonlIngester(%s): source grew after bridge, re-bridged "
+                    "%s (reset %d trajectory row(s))",
+                    self.spec.name, traj_id, n,
+                )
             submitted.append(result)
             seen.add(sid)
         return submitted
+
+    def _bridged_md_by_sid8(self, target_traj_dir: Path) -> dict[str, Path]:
+        """bridge 目录里已有的 ``traj_*.md``，按文件名尾段 sid8 建索引。
+
+        traj_id 形如 ``<prefix><project>_<sid8>``（见 ``_make_traj_id``）——
+        最后一个下划线后即 sid8（uuid 前 8 字符，无下划线）。供续写重转换
+        在不读源文件内容的前提下，廉价反查"这个 sid 上次桥成了哪个 md"。
+        """
+        out: dict[str, Path] = {}
+        if not target_traj_dir.is_dir():
+            return out
+        for md in target_traj_dir.glob(f"{self.spec.traj_id_prefix}*.md"):
+            out[md.stem.rsplit("_", 1)[-1]] = md
+        return out
 
     def _make_traj_id(self, content: str, sid: str) -> str:
         """``<prefix><project>_<sid8>``——project = cwd basename，sid8 = sid 前 8 字符。"""

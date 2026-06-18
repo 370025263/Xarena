@@ -18,6 +18,118 @@ from __future__ import annotations
 import yaml
 
 
+class FrontmatterError(ValueError):
+    """Raised by :func:`parse_strict` when a SKILL.md frontmatter is illegal.
+
+    Carries a human-readable reason and, where available, the 1-based line
+    number inside the source text at which the problem was detected. The
+    string form should read like a lint message so the calling agent (or a
+    human) can fix the file without re-deriving the cause.
+
+    Attributes
+    ----------
+    reason:
+        Short description of why the frontmatter is rejected.
+    line:
+        1-based line number in the original text, or ``None`` if not known.
+    """
+
+    def __init__(self, reason: str, line: int | None = None) -> None:
+        self.reason = reason
+        self.line = line
+        if line is not None:
+            super().__init__(f"line {line}: {reason}")
+        else:
+            super().__init__(reason)
+
+
+def parse_strict(text: str) -> tuple[dict, str]:
+    """Strictly parse a SKILL.md-style file into (frontmatter_dict, body_str).
+
+    Unlike :func:`parse`, this entry point NEVER silently passes through a
+    malformed file. It raises :class:`FrontmatterError` (with a line number
+    and reason where possible) whenever the frontmatter is illegal, and only
+    returns ``(fm, body)`` for a fully valid file.
+
+    Validation contract (to be implemented by the programming sub-agent):
+      - The file MUST open with a `---` fence and have a closing `---` fence;
+        the block between fences MUST be valid YAML parsing to a mapping.
+      - Required keys ``name`` and ``description`` MUST be present.
+      - ``description`` MUST be a non-empty string (this specifically catches
+        multi-line descriptions written without a block scalar / quotes, which
+        YAML parses into a broken or non-string value).
+      - ``body`` (everything after the closing fence) MUST be non-empty.
+
+    On success returns ``(fm, body)``; the lax :func:`parse` is left untouched
+    for read paths that must tolerate legacy/partial files.
+    """
+    if not text or not text.startswith("---"):
+        raise FrontmatterError(
+            "缺少开头的 `---` frontmatter 围栏（文件首行必须是 `---`）", 1
+        )
+
+    lines = text.split("\n")
+    if lines[0].rstrip("\r").strip() != "---":
+        raise FrontmatterError("首行必须正好是 `---`（不能有多余字符）", 1)
+
+    closing_idx = -1
+    for i in range(1, len(lines)):
+        if lines[i].rstrip("\r").strip() == "---":
+            closing_idx = i
+            break
+    if closing_idx == -1:
+        raise FrontmatterError(
+            "缺少结尾的 `---` frontmatter 围栏（需要一行单独的 `---` 收尾）", None
+        )
+
+    yaml_block = "\n".join(lines[1:closing_idx])
+    body_lines = lines[closing_idx + 1:]
+    if body_lines and body_lines[0].strip() == "":
+        body_lines = body_lines[1:]
+    body = "\n".join(body_lines)
+
+    if not yaml_block.strip():
+        raise FrontmatterError("frontmatter 为空：必须包含 name 与 description", 2)
+
+    try:
+        fm = yaml.safe_load(yaml_block)
+    except yaml.YAMLError as exc:
+        # PyYAML 标 0-based 行号，且相对 yaml_block；+1 转 1-based，再 +1 跨过首行围栏
+        mark = getattr(exc, "problem_mark", None)
+        line = (mark.line + 2) if mark is not None else None
+        problem = getattr(exc, "problem", None) or str(exc).splitlines()[0]
+        raise FrontmatterError(f"frontmatter 不是合法 YAML：{problem}", line) from exc
+
+    if not isinstance(fm, dict):
+        raise FrontmatterError(
+            f"frontmatter 必须解析为 mapping（键值对），实得 {type(fm).__name__}", 2
+        )
+
+    if "name" not in fm:
+        raise FrontmatterError("缺少必填字段 name", None)
+    if not str(fm.get("name") or "").strip():
+        raise FrontmatterError("name 不能为空", None)
+
+    if "description" not in fm:
+        raise FrontmatterError("缺少必填字段 description", None)
+    desc = fm.get("description")
+    if not isinstance(desc, str):
+        raise FrontmatterError(
+            "description 必须是字符串；多行描述需用块标量 `|` 或加引号包裹"
+            f"（当前被 YAML 解析成 {type(desc).__name__}）",
+            None,
+        )
+    if not desc.strip():
+        raise FrontmatterError("description 不能为空字符串", None)
+
+    if not body.strip():
+        raise FrontmatterError(
+            "body 为空：frontmatter 之后必须有正文内容", None
+        )
+
+    return fm, body
+
+
 def parse(text: str) -> tuple[dict, str]:
     """Parse a SKILL.md-style file into (frontmatter_dict, body_str).
 

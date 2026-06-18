@@ -1,0 +1,168 @@
+{
+  "c00_subtle_followup": {
+    "scenario": "SUBTLE_FOLLOWUP",
+    "total_lines": 29,
+    "atom_starts": [
+      1
+    ],
+    "boundaries": [],
+    "n_user_turns": 4
+  },
+  "c01_disguised_intent": {
+    "scenario": "DISGUISED_INTENT",
+    "total_lines": 25,
+    "atom_starts": [
+      1,
+      8,
+      14,
+      20
+    ],
+    "boundaries": [
+      8,
+      14,
+      20
+    ],
+    "n_user_turns": 4
+  },
+  "c02_oversized_intent": {
+    "scenario": "OVERSIZED_INTENT",
+    "total_lines": 328,
+    "atom_starts": [
+      1
+    ],
+    "boundaries": [],
+    "n_user_turns": 2
+  },
+  "c03_huge_preamble": {
+    "scenario": "HUGE_PREAMBLE",
+    "total_lines": 382,
+    "atom_starts": [
+      370
+    ],
+    "boundaries": [],
+    "n_user_turns": 2
+  },
+  "c04_adversarial_marker": {
+    "scenario": "ADVERSARIAL_MARKER",
+    "total_lines": 27,
+    "atom_starts": [
+      1
+    ],
+    "boundaries": [],
+    "n_user_turns": 3
+  },
+  "c05_single_atom": {
+    "scenario": "SINGLE_ATOM",
+    "total_lines": 25,
+    "atom_starts": [
+      1
+    ],
+    "boundaries": [],
+    "n_user_turns": 4
+  },
+  "c06_rapid_debug": {
+    "scenario": "RAPID_DEBUG",
+    "total_lines": 84,
+    "atom_starts": [
+      1
+    ],
+    "boundaries": [],
+    "n_user_turns": 14
+  },
+  "c07_undo_revert": {
+    "scenario": "UNDO_REVERT",
+    "total_lines": 24,
+    "atom_starts": [
+      1
+    ],
+    "boundaries": [],
+    "n_user_turns": 4
+  },
+  "c08_no_user_long_tail": {
+    "scenario": "NO_USER_LONG_TAIL",
+    "total_lines": 73,
+    "atom_starts": [
+      1,
+      7
+    ],
+    "boundaries": [
+      7
+    ],
+    "n_user_turns": 2
+  },
+  "c09_voice_noise": {
+    "scenario": "VOICE_NOISE",
+    "total_lines": 18,
+    "atom_starts": [
+      1,
+      13
+    ],
+    "boundaries": [
+      13
+    ],
+    "n_user_turns": 3
+  },
+  "c10_topic_drift": {
+    "scenario": "TOPIC_DRIFT",
+    "total_lines": 24,
+    "atom_starts": [
+      1
+    ],
+    "boundaries": [],
+    "n_user_turns": 4
+  },
+  "c11_interleaved": {
+    "scenario": "INTERLEAVED",
+    "total_lines": 24,
+    "atom_starts": [
+      1,
+      13
+    ],
+    "boundaries": [
+      13
+    ],
+    "n_user_turns": 4
+  },
+  "c12_normal_two": {
+    "scenario": "NORMAL",
+    "total_lines": 13,
+    "atom_starts": [
+      1,
+      8
+    ],
+    "boundaries": [
+      8
+    ],
+    "n_user_turns": 2
+  },
+  "c13_normal_three": {
+    "scenario": "NORMAL",
+    "total_lines": 24,
+    "atom_starts": [
+      1,
+      13,
+      19
+    ],
+    "boundaries": [
+      13,
+      19
+    ],
+    "n_user_turns": 4
+  },
+  "c14_normal_four": {
+    "scenario": "NORMAL",
+    "total_lines": 24,
+    "atom_starts": [
+      1,
+      7,
+      13,
+      19
+    ],
+    "boundaries": [
+      7,
+      13,
+      19
+    ],
+    "n_user_turns": 4
+  }
+}

@@ -61,6 +61,23 @@ def _inject_verify_off_if_requested(model_cls, model_kwargs: dict,
                 f"kwarg，改用 SSL_CERT_FILE=/path/to/ca.pem", "error")
 
 
+def _wrap_with_context_mgmt(model, llm_cfg: dict):
+    """把弃窗单趟的上下文自管理（spec §4.5）套到 model.invoke 外层。
+
+    - max_context 配置优先,缺省 200K + warning（``resolve_max_context``）。
+    - 发请求前到 85% 主动剪裁旧 look/readfile 工具返回（纯截断,不调模型）。
+    - 唯一底层兜底：抓后端"上下文超长"报错 → 再剪 → 重发一次。
+    - 记后端真实 prompt_tokens 供 ``context_budget()`` 工具读。
+
+    套在 rate_limit 包装之外（最外层）：剪裁/重发后才进限流记账,语义正确。
+    """
+    from xskill.agents.context_budget import ContextManager, resolve_max_context
+    max_ctx = resolve_max_context(llm_cfg)
+    cm = ContextManager(max_ctx)
+    model.invoke = cm.wrap(model.invoke)
+    return model
+
+
 def _wrap_with_rate_limit(model, llm_cfg: dict):
     """如果 llm_cfg['rate_limit'] 配置存在,monkey-patch model.invoke
     在调用 LLM 前先 acquire 共享桶。
@@ -137,10 +154,28 @@ def build_chat_model(llm_cfg: dict, log: StreamLog | None = None):
     model_id = llm_cfg.get("model", "gpt-4o")
     api_key = llm_cfg.get("api_key") or os.environ.get("LLM_API_KEY", "")
 
+    # ── 显式网络超时（fail-loud，绝不挂死）────────────────────────
+    # 不可达端点（防火墙 DROP / 黑洞路由）下，openai SDK 缺省行为可能长时间
+    # 阻塞在 connect/DNS；这里给底层 httpx 显式 connect + 总超时，数秒内抛
+    # 清晰异常。agno 的 ``timeout`` kwarg 直通 openai client，httpx.Timeout
+    # 对象合法（openai SDK 原生支持）。
+    # 配置（``llm`` 段，全可选）：``request_timeout``(默认 60s 单次请求总上限)
+    # / ``connect_timeout``(默认 10s 建连上限) / ``client_max_retries``
+    # (默认 0——瞬时错误重试统一由 ``_wrap_with_retry`` 负责，client 层再
+    #  retry 会跟它相乘，故缺省关掉)。
+    import httpx as _httpx
+    request_timeout = float(llm_cfg.get("request_timeout", 60.0) or 60.0)
+    connect_timeout = float(llm_cfg.get("connect_timeout", 10.0) or 10.0)
+    timeout = _httpx.Timeout(request_timeout,
+                             connect=min(connect_timeout, request_timeout))
+    client_max_retries = int(llm_cfg.get("client_max_retries", 0) or 0)
+
     common_kwargs = dict(
         id=model_id,
         base_url=llm_cfg.get("base_url", ""),
         api_key=api_key,
+        timeout=timeout,
+        max_retries=client_max_retries,
         role_map={
             "system": "system",
             "user": "user",
@@ -156,12 +191,93 @@ def build_chat_model(llm_cfg: dict, log: StreamLog | None = None):
         if log:
             log(f"使用 agno DeepSeek model class (base_url=api.deepseek.com)", "step")
         model = DeepSeek(**common_kwargs)
-        return _wrap_with_rate_limit(model, llm_cfg)
+        return _wrap_with_trace(_wrap_with_retry(_wrap_with_context_mgmt(
+            _wrap_with_rate_limit(model, llm_cfg), llm_cfg), llm_cfg))
 
     from agno.models.openai import OpenAIChat
     _inject_verify_off_if_requested(OpenAIChat, common_kwargs, log)
     model = OpenAIChat(**common_kwargs)
-    return _wrap_with_rate_limit(model, llm_cfg)
+    return _wrap_with_trace(_wrap_with_retry(_wrap_with_context_mgmt(
+        _wrap_with_rate_limit(model, llm_cfg), llm_cfg), llm_cfg))
+
+
+# 瞬时错误特征（可重试）；明确不可重试的(上下文超长/400 invalid)单独排除。
+_TRANSIENT_HINTS = (
+    "429", "rate limit", "ratelimit", "too many requests", "rpm exhausted",
+    "timeout", "timed out", "connection", "connreset", "reset by peer",
+    "temporarily", "overloaded", "unavailable", "502", "503", "504",
+    "internal server error", "请求过于频繁",
+)
+_NON_RETRYABLE_HINTS = (
+    "maximum input length", "reduce the length", "invalid_request",
+    "context length", "context_length",
+)
+
+
+def _is_transient_error(exc: Exception) -> bool:
+    t = f"{exc}".lower()
+    if any(h in t for h in _NON_RETRYABLE_HINTS):
+        return False
+    return any(h in t for h in _TRANSIENT_HINTS)
+
+
+def _wrap_with_retry(model, llm_cfg: dict):
+    """对脆弱用户 API 做**强壮持续重试**：瞬时错误（429/5xx/超时/连接断）指数退避
+    重试，次数/退避上限可配。
+
+    设计取舍：
+    - **同步在 worker 线程里 sleep + 重发**——不起子进程/不另开线程，**无僵尸进程**。
+    - **有界**：到 ``max_retries`` 次或撞非瞬时错（400/上下文超长）即抛，绝不无限挂死
+      （挂死会永占线程池 worker）。抛出后该 traj 标 error，watcher 下轮自然重排。
+    - 退避 ``base * 2^(n-1)`` 封顶 ``retry_max_delay``。
+
+    配置（``llm`` 段，全可选）：``max_retries``(默认 8) / ``retry_base_delay``(2.0s)
+    / ``retry_max_delay``(60.0s)。
+    """
+    import time as _time
+    max_retries = int(llm_cfg.get("max_retries", 8) or 8)
+    base = float(llm_cfg.get("retry_base_delay", 2.0) or 2.0)
+    cap = float(llm_cfg.get("retry_max_delay", 60.0) or 60.0)
+    original_invoke = model.invoke
+
+    def retrying_invoke(messages, **kwargs):
+        attempt = 0
+        while True:
+            try:
+                return original_invoke(messages, **kwargs)
+            except Exception as exc:  # noqa: BLE001
+                attempt += 1
+                if attempt >= max_retries or not _is_transient_error(exc):
+                    raise
+                delay = min(cap, base * (2 ** (attempt - 1)))
+                import logging
+                logging.getLogger("xskill.agno_factory").warning(
+                    "LLM 瞬时错误,第 %d/%d 次重试(%.0fs 后): %s",
+                    attempt, max_retries, delay, str(exc)[:160])
+                _time.sleep(delay)
+
+    model.invoke = retrying_invoke
+    return model
+
+
+def _wrap_with_trace(model):
+    """最外层包装：每次 ``model.invoke`` 后把该轮交互写进当前线程的 agent trace sink
+    （由 ``agent_trace.trace_to`` 设定）。没设 sink 时零开销。放最外层 → 看到的是
+    实际发出的请求（rate_limit/裁剪之后）+ 真实响应。
+    """
+    from xskill.agents import agent_trace
+    original_invoke = model.invoke
+
+    def traced_invoke(messages, **kwargs):
+        resp = original_invoke(messages, **kwargs)
+        try:
+            agent_trace.record(messages, resp)
+        except Exception:  # pylint: disable=broad-exception-caught
+            pass
+        return resp
+
+    model.invoke = traced_invoke
+    return model
 
 
 def make_default_factory(config: dict) -> Callable[..., Any]:
@@ -182,6 +298,17 @@ def make_default_factory(config: dict) -> Callable[..., Any]:
 
     def factory(*, instructions, tools, **kwargs):
         model = build_chat_model(llm_cfg)
+        # 弃窗单趟拆分必须开重试 + 指数退避：agno 默认 retries=0,限流时工具调用
+        # 会静默返回空 submitted（被 TaskAgent 的 0 提交抛错兜住,但白白丢一趟）。
+        # 调用方显式传 retries 时尊重其值,否则给安全缺省。
+        kwargs.setdefault("retries", 3)
+        kwargs.setdefault("exponential_backoff", True)
+        kwargs.setdefault("delay_between_retries", 2)
+        # agno 遥测默认开（telemetry=True）：每次 agent.run() 结束会同步 POST
+        # https://os-api.agno.com/telemetry/runs。无外网/丢包环境下该请求长时间
+        # 阻塞甚至挂死（实测单次 run 多挂 3~60s+，这正是探针冒烟测试/脚本
+        # "吊死"的根因）。生产/探针都不该把运行数据报给厂商——一律关掉。
+        kwargs.setdefault("telemetry", False)
         return Agent(
             model=model,
             instructions=instructions,

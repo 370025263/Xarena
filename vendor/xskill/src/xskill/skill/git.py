@@ -40,7 +40,7 @@ from dulwich.errors import NotGitRepository
 from dulwich.objects import Blob, Commit, Tree
 from dulwich.repo import Repo
 
-logger = logging.getLogger("git_lock")
+logger = logging.getLogger("xskill.git_lock")
 
 
 # ═══════════════════════════════════════════════════════════════════
@@ -112,6 +112,9 @@ SKILL_GITIGNORE = """# xskill v2 skill 仓库的 ignore 规则
 # 灰度运行时数据
 .ux_scores.jsonl
 .canary/
+
+# description 触发优化的实验留档（高频写入,不版本化）
+.description_optimization/
 
 # 旧锁文件
 .lock
@@ -323,6 +326,12 @@ def _stage_all(repo: Repo, root: Path) -> bool:
             continue
         parts = rel.parts
         if not parts or parts[0] == ".git":
+            continue
+        # description 触发优化的实验留档 NEVER staged。新建仓库的 .gitignore
+        # 模板已含 .description_optimization/，但对**预先存在**的 skill 仓
+        # （.gitignore 可能没这条）这里硬编码兜底跳过，绝不版本化高频写入的
+        # 优化实验数据。
+        if ".description_optimization" in parts:
             continue
         rel_str = str(rel).replace(os.sep, "/")
         if _is_ignored(rel_str, ignore_patterns):

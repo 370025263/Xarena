@@ -21,7 +21,7 @@ from xskill.skill.git import commit_changes
 if TYPE_CHECKING:
     from xskill.pipeline.registry import Registry
 
-logger = logging.getLogger("skill_manager")
+logger = logging.getLogger("xskill.skill_manager")
 
 
 class SkillRepo:
@@ -85,6 +85,35 @@ class SkillRepo:
         from xskill.utils.llm import create_embed_client
         embed = create_embed_client(get_config())
         rebuild_skill_index(skill_dir=self.root, embed_client=embed)
+
+    # ─── 清空（rebuild --force 用）──────────────────────────────
+    def wipe_all_skills(self) -> int:
+        """删除仓里所有 skill 子目录（含各自 ``.git`` 子仓），返回删除个数。
+
+        ``xskill rebuild --force`` 用：换强模型从零重建前先清空旧 skill。
+        只删 skill 子目录（每个有 ``SKILL.md`` 或 ``.git`` 的子目录），保留
+        仓根与 ``references`` / ``.skill_index.pkl`` 等非 skill 工件由 watcher
+        后续自行重建。删完一并清掉过期索引。
+        """
+        n = 0
+        if not self.root.is_dir():
+            return 0
+        for sub in sorted(self.root.iterdir()):
+            if not sub.is_dir():
+                continue
+            if sub.name == "references":
+                continue
+            # 一个 skill 目录的判据：有 SKILL.md 或 .git 子仓（baby 态可能
+            # 只有 .git 还没写 SKILL.md）。
+            if (sub / "SKILL.md").is_file() or (sub / ".git").is_dir():
+                shutil.rmtree(sub)
+                n += 1
+        # 索引已失效，删掉避免指向不存在的 skill
+        idx = self.root / ".skill_index.pkl"
+        if idx.is_file():
+            idx.unlink()
+        logger.info("wipe_all_skills: removed %d skill(s) under %s", n, self.root)
+        return n
 
     def __repr__(self) -> str:
         return f"SkillRepo({self.root}, n={len(self)})"

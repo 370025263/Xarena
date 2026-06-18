@@ -109,6 +109,19 @@ CREATE TABLE IF NOT EXISTS canary_decision (
     staging_samples INTEGER,
     age_days        REAL
 );
+
+CREATE TABLE IF NOT EXISTS skill_trigger_eval (
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    ts           TEXT DEFAULT (datetime('now')),
+    skill        TEXT,        -- skill slug
+    version_sha  TEXT,        -- 评测时该 skill 的 main sha(首版/未提交可空)
+    exp_id       TEXT,        -- .description_optimization 实验目录号
+    train_score  REAL,        -- 中选描述在 train 集触发准确率
+    test_score   REAL,        -- 中选描述在 held-out test 集触发准确率(选优依据)
+    n_cases      INTEGER,     -- 合成 case 总数
+    catalog_size INTEGER      -- 诱饵清单平均大小(竞争对手数)
+);
+CREATE INDEX IF NOT EXISTS idx_trig_skill ON skill_trigger_eval(skill);
 """
 
 
@@ -132,6 +145,8 @@ def _migrate(conn: sqlite3.Connection) -> None:
     # ── trajectories ──
     cur = conn.execute("PRAGMA table_info(trajectories)")
     cols = {row[1] for row in cur.fetchall()}
+    # status 列是否本次才补上——决定要不要跑下方那条历史状态回填(只该一次性)。
+    status_was_missing = "status" not in cols
     migrations = [
         ("status", "TEXT DEFAULT 'discovered'"),
         ("process_action", "TEXT"),
@@ -164,15 +179,20 @@ def _migrate(conn: sqlite3.Connection) -> None:
         )
         # 已有行历史上都是用户手动 register，标 'manual'
         conn.execute("UPDATE watch_dirs SET ecosystem='manual' WHERE ecosystem IS NULL")
-    # Backfill status from has_meta/has_embedding for pre-existing rows
-    conn.execute(
-        "UPDATE trajectories SET status='indexed'"
-        " WHERE has_embedding=1 AND (status IS NULL OR status='discovered')"
-    )
-    conn.execute(
-        "UPDATE trajectories SET status='meta_done'"
-        " WHERE has_meta=1 AND has_embedding=0 AND (status IS NULL OR status='discovered')"
-    )
+    # Backfill status from has_meta/has_embedding —— **只在首次补 status 列时跑一次**。
+    # 以前每次 get_connection 都跑这条,会把任何 status='discovered' 的**活行**
+    # （rebuild 重置 / error 重试 / 僵尸清理刚翻回的）在下次连接时打回 'indexed'，
+    # 导致 watcher 永不重拆（0 atom/0 skill 的真凶,见 test_rebuild_resplit_repro）。
+    # 真·一次性迁移只该在那个加列的连接里跑,之后 status 是权威状态,不能再覆盖。
+    if status_was_missing:
+        conn.execute(
+            "UPDATE trajectories SET status='indexed'"
+            " WHERE has_embedding=1 AND (status IS NULL OR status='discovered')"
+        )
+        conn.execute(
+            "UPDATE trajectories SET status='meta_done'"
+            " WHERE has_meta=1 AND has_embedding=0 AND (status IS NULL OR status='discovered')"
+        )
     conn.commit()
 
 
@@ -226,6 +246,43 @@ def record_atom_adoption(*, atom_id: str, skill: str, weightscore: int,
             (atom_id, skill, int(weightscore), 1 if was_new else 0),
         )
         conn.commit()
+    finally:
+        conn.close()
+
+
+def record_trigger_eval(*, skill: str, version_sha: Optional[str], exp_id: str,
+                        train_score: float, test_score: float, n_cases: int,
+                        catalog_size: int,
+                        db_path: Optional[Path] = None) -> None:
+    """记一次离线探针触发评测结果(中选描述的 train/test 触发准确率)。
+
+    供看板展示 per-skill/版本"离线探针触发率"——区别于 mark_skill_used 记的
+    线上真实使用频次,两者语义不同不可混。
+    """
+    conn = get_connection(db_path)
+    try:
+        conn.execute(
+            "INSERT INTO skill_trigger_eval"
+            "(skill,version_sha,exp_id,train_score,test_score,n_cases,catalog_size)"
+            " VALUES(?,?,?,?,?,?,?)",
+            (skill, version_sha, exp_id, float(train_score), float(test_score),
+             int(n_cases), int(catalog_size)),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def trigger_eval_for_skill(skill: str, *, db_path: Optional[Path] = None) -> list:
+    """取某 skill 的离线触发评测历史(按时间升序),供看板趋势图。"""
+    conn = get_connection(db_path)
+    try:
+        rows = conn.execute(
+            "SELECT ts,version_sha,exp_id,train_score,test_score,n_cases,"
+            "catalog_size FROM skill_trigger_eval WHERE skill=? ORDER BY id ASC",
+            (skill,),
+        ).fetchall()
+        return [dict(r) for r in rows]
     finally:
         conn.close()
 
@@ -298,23 +355,32 @@ def _sidecar_model(md_path: Path) -> Optional[str]:
 #   1) 优先 client 上报的 source_harness（team 上传带）；
 #   2) 缺失时,非 team_client 目录的 ecosystem 本身就是 harness
 #      （本机 claude_code / codex / opencode sessions 目录）；
-#   3) 都没有（团队上传但旧 client 没带 harness）→ unknown。
+#   3) 都没有（团队上传但旧 client 没带 harness）→ 兜底标签（默认 'unknown'，
+#      看板可经 config 的 dashboard.default_harness 改成别的已知 harness）。
 # 这样既替代了"全是 team_client"的无信息分组,也不需要为本机轨迹回填。
+# 兜底标签经 SQL 命名绑定参数 ``:hlabel`` 注入（自由字符串，防注入/引号问题）。
 _HARNESS_EXPR = (
     "COALESCE(NULLIF(t.source_harness,''),"
     " CASE WHEN wd.ecosystem NOT IN ('team_client','manual')"
-    " THEN wd.ecosystem END, 'unknown')"
+    " THEN wd.ecosystem END, :hlabel)"
 )
 
 
-def harness_share(db_path: Optional[Path] = None) -> list[dict]:
-    """用户 coding agent(harness)分布(按轨迹数),供看板按 coding agent 显示占比。"""
+def harness_share(db_path: Optional[Path] = None, *,
+                  unknown_label: str = "unknown") -> list[dict]:
+    """用户 coding agent(harness)分布(按轨迹数),供看板按 coding agent 显示占比。
+
+    ``unknown_label``：harness 完全缺失时的归类桶，默认 'unknown'。看板层据
+    config 传入 dashboard.default_harness 覆盖；canary/stats 等调用不传，保持
+    'unknown' 语义不变。
+    """
     conn = get_connection(db_path)
     try:
         rows = conn.execute(
             f"SELECT {_HARNESS_EXPR} AS harness, COUNT(*) AS trajs"
             " FROM trajectories t JOIN watch_dirs wd ON t.watch_dir_id=wd.id"
-            f" GROUP BY {_HARNESS_EXPR} ORDER BY trajs DESC"
+            f" GROUP BY {_HARNESS_EXPR} ORDER BY trajs DESC",
+            {"hlabel": unknown_label},
         ).fetchall()
         total = sum(r["trajs"] for r in rows) or 1
         return [{"harness": r["harness"], "trajs": r["trajs"],
@@ -323,14 +389,21 @@ def harness_share(db_path: Optional[Path] = None) -> list[dict]:
         conn.close()
 
 
-def model_share(db_path: Optional[Path] = None) -> list[dict]:
-    """用户 agent 模型分布(按轨迹数),供 server stats 显示占比。None → 'unknown'。"""
+def model_share(db_path: Optional[Path] = None, *,
+                unknown_label: str = "unknown") -> list[dict]:
+    """用户 agent 模型分布(按轨迹数),供 server stats 显示占比。source_model 缺失
+    → ``unknown_label``（默认 'unknown'，经命名参数 ``:mlabel`` 注入）。
+
+    注意：canary 的 ``eligible_models`` 把 'unknown' 当“未归属、留在 main”的哨兵，
+    所以那条路径必须用默认 'unknown'——只有看板展示层才传入 config 的覆盖值。
+    """
     conn = get_connection(db_path)
     try:
         rows = conn.execute(
-            "SELECT COALESCE(source_model,'unknown') AS model, COUNT(*) AS trajs"
-            " FROM trajectories GROUP BY COALESCE(source_model,'unknown')"
-            " ORDER BY trajs DESC"
+            "SELECT COALESCE(source_model,:mlabel) AS model, COUNT(*) AS trajs"
+            " FROM trajectories GROUP BY COALESCE(source_model,:mlabel)"
+            " ORDER BY trajs DESC",
+            {"mlabel": unknown_label},
         ).fetchall()
         total = sum(r["trajs"] for r in rows) or 1
         return [{"model": r["model"], "trajs": r["trajs"],
@@ -536,6 +609,13 @@ def mark_skill_used(
     *,
     db_path: Optional[Path] = None,
 ) -> None:
+    """记录该轨迹触发了哪个 skill / 哪个灰度 side。
+
+    设计：skill 版本(sha) / 用户**不落 trajectories 列**,而是看板 metrics 查询时
+    从 traj .md 头 `<!-- xskill:skill=X side=Y sha=Z -->` 分析式解析(版本)、JOIN
+    watch_dirs.label 现算(用户)。与工具调用/ token 同属"按轨迹文本现算",保持
+    "分析而非埋点"一致——免迁移、不改这条打分热路径的写入语义。
+    """
     conn = get_connection(db_path)
     try:
         conn.execute(
@@ -805,6 +885,74 @@ def update_traj_offset(
              watch_dir_id, filename),
         )
         conn.commit()
+    finally:
+        conn.close()
+
+
+def reset_trajectories(
+    *,
+    eco: Optional[str] = None,
+    traj_id: Optional[str] = None,
+    db_path: Optional[Path] = None,
+) -> int:
+    """删除已拆 atom + 重置状态，让 watcher 从头重拆（``xskill rebuild`` 用）。
+
+    **关键正确性点**：TaskAgent 的续接点取自 atom **文件**
+    （``AtomTaskStore.last_offset`` = 各 ``<traj_id>/tasks/atom_*.json`` 的
+    ``max(offset_end)``），**不读 DB 的 ``last_offset`` 列**。所以只翻 DB 状态
+    而不删 atom 文件 → ``last_offset ≥ EOF`` → TaskAgent 直接返回空 → 重拆失效
+    （0.6.1a1 的洞）。因此本函数**必删 atom 文件**，这才是真正触发重拆的动作。
+
+    同时删该目录的 ``index.pkl``（atom 的向量索引）——否则 atom 已删而索引仍留
+    陈旧 embedding，cluster 阶段向量检索会命中已不存在的 atom。
+
+    DB ``status`` 翻回 ``discovered`` 让 watcher 下轮重新排 split。
+
+    Args:
+        eco: 只重置该生态（``watch_dirs.ecosystem``）的轨迹；None=全部。
+        traj_id: 只重置该轨迹（按文件名 stem 匹配）；None=不按轨迹过滤。
+
+    Returns:
+        被重置的轨迹行数。
+    """
+    conn = get_connection(db_path)
+    try:
+        sql = (
+            "SELECT t.id, t.filename, w.path FROM trajectories t "
+            "JOIN watch_dirs w ON t.watch_dir_id = w.id WHERE 1=1"
+        )
+        params: list = []
+        if eco:
+            sql += " AND w.ecosystem = ?"
+            params.append(eco)
+        if traj_id:
+            sql += " AND (t.filename = ? OR t.filename = ?)"
+            params += [traj_id, f"{traj_id}.md"]
+        rows = conn.execute(sql, params).fetchall()
+
+        dirs_seen: set[str] = set()
+        for r in rows:
+            conn.execute(
+                "UPDATE trajectories SET status='discovered', last_offset=0, "
+                "last_atom_id=NULL, tasks_extracted=0, "
+                "has_meta=0, has_embedding=0, indexed_at=NULL, "
+                "updated_at=datetime('now') WHERE id=?",
+                (r["id"],),
+            )
+            stem = (r["filename"][:-3] if r["filename"].endswith(".md")
+                    else r["filename"])
+            tasks_dir = Path(r["path"]) / stem / "tasks"
+            if tasks_dir.is_dir():
+                for af in tasks_dir.glob("atom_*.json"):
+                    af.unlink()
+            dirs_seen.add(r["path"])
+        conn.commit()
+        # 清各目录的陈旧向量索引（AtomTaskStore.INDEX_FILE = "index.pkl"）。
+        for d in dirs_seen:
+            idx = Path(d) / "index.pkl"
+            if idx.is_file():
+                idx.unlink()
+        return len(rows)
     finally:
         conn.close()
 

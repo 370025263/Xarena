@@ -144,13 +144,165 @@ async function loadSkills() {
   const parts = Object.keys(bs).sort().map(k => `${k} ${bs[k]}`).join(' · ');
   put('skills.summary', `共 ${d.total} 个 · ${parts}`);
   rows('skills-body', (d.skills || []).map(s =>
-    `<tr><td>${esc(s.name)}</td>`
+    `<tr><td><a href="#" class="skill-link" data-skill="${esc(s.name)}">${esc(s.name)}</a></td>`
     + `<td><span class="badge ${STATE_BADGE[s.state] || 'bg-secondary-lt'}">${esc(s.state)}</span></td>`
     + `<td class="text-secondary" style="max-width:520px">${esc(s.description) || '—'}</td>`
     + `<td class="text-end">v${esc(s.version)}</td>`
     + `<td class="text-end">${s.candidates || 0}</td>`
     + `<td class="text-end">${s.use_count || 0}</td></tr>`).join(''));
 }
+
+// ── 单 skill 详情 drill-in（子项目 D2）─────────────────────────────
+
+// 确定性 SVG 折线（给定数据必出同图，不靠图表库；符合"骨架由确定性工具产出"）
+function sparkline(points, w = 320, h = 60) {
+  const vals = points.map(p => Number(p) || 0);
+  if (!vals.length) return '<span class="text-secondary">无数据</span>';
+  const max = Math.max(...vals), min = Math.min(...vals);
+  const span = (max - min) || 1, n = vals.length;
+  const dx = n > 1 ? (w - 8) / (n - 1) : 0;
+  const pts = vals.map((v, i) =>
+    `${(4 + i * dx).toFixed(1)},${(h - 4 - (v - min) / span * (h - 8)).toFixed(1)}`).join(' ');
+  return `<svg width="${w}" height="${h}" viewBox="0 0 ${w} ${h}">`
+    + `<polyline fill="none" stroke="#206bc4" stroke-width="2" points="${pts}"/>`
+    + vals.map((v, i) => `<circle cx="${(4 + i * dx).toFixed(1)}" cy="${(h - 4 - (v - min) / span * (h - 8)).toFixed(1)}" r="2.5" fill="#206bc4"/>`).join('')
+    + `</svg>`;
+}
+
+// diff 文本 → 红绿 HTML（+ 绿 / - 红）
+function renderDiff(diff) {
+  if (!diff) return '<span class="text-secondary">无 diff</span>';
+  return '<pre class="diff-view" style="font-size:12px;line-height:1.4">' + diff.split('\n').map(line => {
+    const e = esc(line);
+    if (line.startsWith('+') && !line.startsWith('+++')) return `<span style="background:#e6ffed;color:#22863a">${e}</span>`;
+    if (line.startsWith('-') && !line.startsWith('---')) return `<span style="background:#ffeef0;color:#b31d28">${e}</span>`;
+    if (line.startsWith('@@')) return `<span style="color:#6f42c1">${e}</span>`;
+    return e;
+  }).join('\n') + '</pre>';
+}
+
+function detailBox() {
+  let box = document.getElementById('skill-detail');
+  if (!box) {
+    box = document.createElement('div');
+    box.id = 'skill-detail';
+    box.className = 'card mt-3';
+    const sec = document.getElementById('pg-skills') || document.body;
+    sec.appendChild(box);
+  }
+  return box;
+}
+
+async function loadSkillDetail(name) {
+  const box = detailBox();
+  box.innerHTML = `<div class="card-body">加载 ${esc(name)} …</div>`;
+  const [d, tree] = await Promise.all([
+    j('api/v1/dashboard/skill/' + encodeURIComponent(name) + '/detail'),
+    j('api/v1/dashboard/skill/' + encodeURIComponent(name) + '/tree'),
+  ]);
+  const vrows = (d.versions || []).map(v =>
+    `<tr><td><code>${esc((v.sha || '').slice(0, 8))}</code></td><td class="text-end">${v.triggers}</td>`
+    + `<td class="text-end">${ux(v.avg_ux)}</td><td class="text-end">${v.avg_tool_calls}</td>`
+    + `<td class="text-end">${tok(v.avg_tokens)}</td></tr>`).join('')
+    || '<tr><td colspan="5" class="text-secondary">还没有版本触发数据</td></tr>';
+  const userRows = (d.by_user || []).map(u =>
+    `<tr><td>${esc(u.user)}</td><td class="text-end">${u.triggers}</td><td class="text-end">${ux(u.avg_ux)}</td></tr>`).join('');
+  const trend = (d.trend || []).map(p => p.ux);
+  const fileItems = (tree.files || []).map(f =>
+    `<a href="#" class="list-group-item list-group-item-action py-1 px-2 skf" data-skill="${esc(name)}" data-path="${esc(f.path)}">${esc(f.path)} <span class="text-secondary">(${f.size})</span></a>`).join('');
+  const gitItems = (d.versions_git || []).map(g =>
+    `<a href="#" class="list-group-item list-group-item-action py-1 px-2 skd" data-skill="${esc(name)}" data-sha="${esc(g.sha)}"><code>${esc(g.short)}</code> ${esc(g.subject)}</a>`).join('');
+
+  box.innerHTML = `<div class="card-body">
+    <div class="d-flex justify-content-between"><h3>${esc(name)}</h3>
+      <div>总触发 <strong>${d.total_triggers}</strong> 次</div></div>
+    <div class="row mt-2">
+      <div class="col-md-7">
+        <div class="subheader">版本统计（每版本触发 / UX / 平均工具调用 / 平均 token）</div>
+        <table class="table table-sm"><thead><tr><th>版本</th><th class="text-end">触发</th><th class="text-end">UX</th><th class="text-end">工具/atom</th><th class="text-end">token/atom</th></tr></thead><tbody>${vrows}</tbody></table>
+        <div class="subheader mt-2">跨版本 UX 进化趋势</div>${sparkline(trend)}
+        <div class="subheader mt-3">按用户</div>
+        <table class="table table-sm"><tbody>${userRows || '<tr><td class="text-secondary">无</td></tr>'}</tbody></table>
+      </div>
+      <div class="col-md-5">
+        <div class="subheader">文件目录</div>
+        <div class="list-group list-group-flush" style="max-height:160px;overflow:auto">${fileItems}</div>
+        <div class="subheader mt-2">版本（点击看红绿 diff）</div>
+        <div class="list-group list-group-flush" style="max-height:140px;overflow:auto">${gitItems}</div>
+      </div>
+    </div>
+    <div id="skill-trigger" class="mt-3"><div class="text-secondary">加载触发率…</div></div>
+    <div class="mt-2"><div class="subheader">预览 / diff</div><div id="skill-preview" class="border rounded p-2" style="max-height:320px;overflow:auto"><span class="text-secondary">点左侧文件或版本查看</span></div></div>
+  </div>`;
+  box.scrollIntoView({ behavior: 'smooth' });
+  loadTriggerPanel(name).catch(console.error);
+}
+
+// 离线探针触发率面板（描述质量信号；区别于上方"总触发"的线上真实使用率）
+function pctf(x) { return Math.round((Number(x) || 0) * 100) + '%'; }
+
+async function loadTriggerPanel(name) {
+  const el = document.getElementById('skill-trigger');
+  if (!el) return;
+  let hist = { history: [] }, cases = { cases: [], exp: null };
+  try { hist = await j('api/v1/dashboard/skill/' + encodeURIComponent(name) + '/trigger'); } catch (e) { /* 空 */ }
+  try { cases = await j('api/v1/dashboard/skill/' + encodeURIComponent(name) + '/trigger/cases'); } catch (e) { /* 空 */ }
+  const hrows = (hist.history || []).map(h =>
+    `<tr><td><code>${esc((h.version_sha || '—').slice(0, 8))}</code></td><td class="text-end">${pctf(h.test_score)}</td>`
+    + `<td class="text-end">${pctf(h.train_score)}</td><td class="text-end">${h.n_cases}</td>`
+    + `<td class="text-end">${h.catalog_size}</td><td class="text-secondary">${esc((h.ts || '').slice(0, 16))}</td></tr>`).join('')
+    || '<tr><td colspan="6" class="text-secondary">还没有离线触发评测</td></tr>';
+  const crows = (cases.cases || []).map(c =>
+    `<tr><td>${esc(c.query)}</td><td class="text-center">${c.should_trigger ? '是' : '否'}</td>`
+    + `<td class="text-center">${c.did_trigger ? '触发' : '未触发'}</td>`
+    + `<td class="text-center">${c.passed ? '✓' : '✗'}</td>`
+    + `<td class="text-secondary small">${esc((c.catalog || []).join(', '))}</td>`
+    + `<td><button class="btn btn-sm btn-outline-primary trig-rerun" data-skill="${esc(name)}" data-query="${esc(c.query)}">重跑</button></td></tr>`).join('')
+    || '<tr><td colspan="6" class="text-secondary">无 case（该 skill 还没跑过触发优化）</td></tr>';
+  el.innerHTML = `<div class="subheader">离线探针触发率 <span class="text-secondary">（描述质量信号——真跑代理在语义相关技能清单里抢触发；区别于上方"总触发"的线上真实使用）</span></div>
+    <table class="table table-sm"><thead><tr><th>版本</th><th class="text-end">test 触发率</th><th class="text-end">train</th><th class="text-end">cases</th><th class="text-end">诱饵数</th><th>时间</th></tr></thead><tbody>${hrows}</tbody></table>
+    <div class="subheader mt-2">逐 case <span class="text-secondary">（实验 ${esc(cases.exp || '—')}；点"重跑"用当前描述真跑一轮探针）</span></div>
+    <table class="table table-sm"><thead><tr><th>query</th><th class="text-center">应触发</th><th class="text-center">实测</th><th class="text-center">通过</th><th>诱饵清单</th><th></th></tr></thead><tbody>${crows}</tbody></table>`;
+}
+
+// 点击：技能名 → 详情；文件 → 预览；版本 → diff
+document.addEventListener('click', async e => {
+  const sl = e.target.closest('.skill-link');
+  if (sl) { e.preventDefault(); loadSkillDetail(sl.dataset.skill).catch(console.error); return; }
+  const fl = e.target.closest('.skf');
+  if (fl) {
+    e.preventDefault();
+    const r = await j('api/v1/dashboard/skill/' + encodeURIComponent(fl.dataset.skill) + '/file?path=' + encodeURIComponent(fl.dataset.path));
+    document.getElementById('skill-preview').innerHTML = r.content != null
+      ? `<pre style="font-size:12px">${esc(r.content)}</pre>` : `<span class="text-danger">${esc(r.error || 'error')}</span>`;
+    return;
+  }
+  const dl = e.target.closest('.skd');
+  if (dl) {
+    e.preventDefault();
+    const r = await j('api/v1/dashboard/skill/' + encodeURIComponent(dl.dataset.skill) + '/diff?sha=' + encodeURIComponent(dl.dataset.sha));
+    document.getElementById('skill-preview').innerHTML = renderDiff(r.diff);
+    return;
+  }
+  // 逐 case"重跑"：用当前描述真跑一轮探针（action 端点），结果回填按钮
+  const rb = e.target.closest('.trig-rerun');
+  if (rb) {
+    e.preventDefault();
+    rb.disabled = true; const old = rb.textContent; rb.textContent = '跑…';
+    try {
+      const resp = await fetch('api/v1/dashboard/skill/' + encodeURIComponent(rb.dataset.skill) + '/trigger/rerun',
+        { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ query: rb.dataset.query }) });
+      const data = await resp.json();
+      rb.classList.remove('btn-outline-primary');
+      if (data.error) { rb.textContent = '错误'; rb.classList.add('btn-outline-danger'); }
+      else if (data.did_trigger) { rb.textContent = '触发 ✓'; rb.classList.add('btn-outline-success'); }
+      else { rb.textContent = '未触发'; rb.classList.add('btn-outline-secondary'); }
+      rb.title = '诱饵清单: ' + ((data.catalog || []).join(', ') || '空');
+    } catch (err) { rb.textContent = '错误'; }
+    rb.disabled = false; void old;
+    return;
+  }
+});
 
 async function loadDirs() {
   const d = await j('api/v1/dashboard/dirs');

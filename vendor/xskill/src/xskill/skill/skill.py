@@ -31,7 +31,7 @@ if TYPE_CHECKING:
     from xskill.pipeline.registry import Registry
     from xskill.pipeline.trajectory import Trajectory
 
-logger = logging.getLogger("skill_manager")
+logger = logging.getLogger("xskill.skill_manager")
 
 
 # ═════════════════════════════════════════════════════════════════

@@ -26,7 +26,7 @@ from typing import Iterator
 
 import numpy as np
 
-logger = logging.getLogger("ux_score")
+logger = logging.getLogger("xskill.ux_score")
 
 
 @dataclass
@@ -57,6 +57,12 @@ class AtomTask:
     raw_segment: str = ""
     source_model: str = ""   # 产生该 atom 的用户 agent 模型，继承自所属轨迹的
     #                          <traj>.json sidecar "model"（canary 按模型分桶用）
+    clustered: bool = False  # cluster 已消费标记（耐久）。cluster agent 成功把它
+    #                          归进某 skill buffer 后由 process_atom_batch/_task 置真。
+    #                          watcher 据此跨轨迹池化去重 + 判轨迹 done——比
+    #                          .candidates.yml 成员更耐久：SkillEdit 晋升会清空
+    #                          .candidates.yml，但本标记留在 atom JSON，跨进程重启
+    #                          与 skill 晋升都不丢（rebuild 删 atom 时自然复位）。
 
     def to_json(self) -> str:
         return json.dumps(asdict(self), ensure_ascii=False, indent=2)

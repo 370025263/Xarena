@@ -13,9 +13,14 @@ from pathlib import Path
 
 import numpy as np
 
-from xskill.skill.frontmatter import parse as fm_parse, serialize as fm_serialize
+from xskill.skill.frontmatter import (
+    parse as fm_parse,
+    parse_strict as fm_parse_strict,
+    serialize as fm_serialize,
+    FrontmatterError,
+)
 
-logger = logging.getLogger("skill_tools")
+logger = logging.getLogger("xskill.skill_tools")
 
 # Global context — initialized by process.py / server.py / cli.py
 _ctx = {
@@ -387,15 +392,24 @@ def write_file(path: str, content: str) -> str:
     if ".git" in resolved.parts:
         return f"error: writes into .git/ are forbidden (tried: {path})"
 
-    p.parent.mkdir(parents=True, exist_ok=True)
-    # 写 SKILL.md：消毒 frontmatter 日期（防止 LLM 写未来日期 / 不合法 ISO）
+    # 写 SKILL.md：先做 frontmatter 写后校验（漏拦=静默放行坏 skill），
+    # 非法**不写盘**，把富误差返回给 agent 让它当场改重写；合法再消毒日期 +
+    # 重序列化写入。校验逻辑见 frontmatter.parse_strict（必填 name/description、
+    # description 必须非空字符串、body 非空）。
     if p.name == "SKILL.md":
         try:
-            fm, body = fm_parse(content)
-            _sanitize_frontmatter_dates(fm)
-            content = fm_serialize(fm, body)
-        except Exception as e:
-            logger.warning(f"SKILL.md frontmatter 日期消毒失败，原样写入: {e}")
+            fm, body = fm_parse_strict(content)
+        except FrontmatterError as e:
+            logger.warning(f"SKILL.md frontmatter 非法，拒写: {e}")
+            return (
+                f"error: SKILL.md frontmatter 非法，未写盘 —— {e}\n"
+                "请修正 frontmatter 后重新调用 write_file。常见原因：多行 "
+                "description 没用块标量 `|` 或引号、缺 name/description、正文为空。"
+            )
+        _sanitize_frontmatter_dates(fm)
+        content = fm_serialize(fm, body)
+
+    p.parent.mkdir(parents=True, exist_ok=True)
     p.write_text(content, encoding="utf-8")
     logger.info(f"✏️  wrote: {p} ({len(content)} bytes)")
     return f"wrote: {p} ({len(content)} chars)"
@@ -757,6 +771,38 @@ def list_files(path: str) -> str:
 # SkillEditAgent 专用 commit 工具（不要给 ClusterAgent）
 # ═══════════════════════════════════════════════════════════════════
 
+def _run_description_optimization(target: Path, slug: str) -> None:
+    """commit 前跑 description 触发优化（D1：硬编码进 workflow，不做 agent tool）。
+
+    gating on ``config.skill_opt.enabled``；任何失败只 log，绝不阻断 commit
+    （退回 agent 写的 description 继续提交）。走 ``_ctx["llm_client"]``——daemon
+    起来时已含 rate_limit，不另起进程/线程。
+    """
+    config = _ctx.get("config") or {}
+    if not (config.get("skill_opt", {}) or {}).get("enabled", True):
+        return
+    llm = _ctx.get("llm_client")
+    embed = _ctx.get("embed_client")
+    if llm is None or embed is None:
+        logger.warning(
+            "skip description_opt: _ctx llm_client/embed_client 未初始化（%s）", slug,
+        )
+        return
+    try:
+        from xskill.agents.agno_factory import make_default_factory
+        from xskill.skill.description_opt import optimize_description
+        skill_root = _ctx_v2["skill_dir"]
+        optimize_description(
+            target, llm=llm, config=config,
+            agno_agent_factory=make_default_factory(config),
+            embed_client=embed, skill_root=skill_root,
+        )
+    except Exception:
+        logger.exception(
+            "description_opt 失败（不阻断 commit，沿用 agent 写的 desc）: %s", slug,
+        )
+
+
 def commit_baby_to_main(skill_name: str, message: str) -> str:
     """SkillEditAgent 首次为某 skill 出版本时调用。
 
@@ -785,6 +831,9 @@ def commit_baby_to_main(skill_name: str, message: str) -> str:
     msg = (message or "").strip()
     if not msg:
         return "error: commit message 必填"
+    # commit 前先跑 description 触发优化（best desc 写回 frontmatter），优化产物
+    # 随 add . 一起进 commit。失败只 log，不阻断 commit。
+    _run_description_optimization(target, slug)
     ok = commit_baby_to_main_branch(str(target), msg)
     if not ok:
         return f"error: commit_baby_to_main 失败（不在 baby 分支？看 daemon 日志）"
@@ -820,6 +869,9 @@ def commit_to_staging(skill_name: str, message: str) -> str:
     msg = (message or "").strip()
     if not msg:
         return "error: commit message 必填"
+    # commit 前先跑 description 触发优化（best desc 写回 frontmatter）。失败只
+    # log，不阻断 commit。
+    _run_description_optimization(target, slug)
     ok = commit_to_staging_branch(str(target), msg)
     if not ok:
         return ("error: commit_to_staging 失败"

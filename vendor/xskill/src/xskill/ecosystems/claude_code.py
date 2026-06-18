@@ -692,7 +692,11 @@ class CCSessionIngester:
             # 翻牌：仅在 used_skill 时翻一次，让下个真用 skill 的 session
             # 拿到对面 side。每个 used session 翻一次；多个 used session
             # 在一个 poll 内被见到 → 翻多次（净 effect 视奇偶决定下次 side）。
-            self._flip(canary_skill)
+            # 续写重转换（rebridged）的 session 之前可能已经翻过——只补
+            # header（上面覆盖写 md 把旧 header 冲掉了），不再翻，免得同一
+            # session 重复消耗灰度配额、污染 A/B 分布。
+            if not rec.get("rebridged"):
+                self._flip(canary_skill)
         return submitted
 
     # ── flip helper ──────────────────────────────────────────────

@@ -110,6 +110,7 @@ class Trajectory:
 # =============================================================================
 
 _USER_HEADER_RE = re.compile(r"^##\s+User\b", re.IGNORECASE)
+_INITIAL_QUERY_RE = re.compile(r"^##\s+Initial\s+Query\b", re.IGNORECASE)
 _SECTION_HEADER_RE = re.compile(r"^##\s+\S+")
 
 
@@ -137,10 +138,12 @@ def _read_trajectory_text(path: Path) -> tuple[str | None, str | None]:
 
 
 def _extract_user_sections(md_text: str) -> tuple[list[str], bool]:
-    """从标准化 trajectory markdown 中提取 ``## User`` 段落正文。
+    """从标准化 trajectory markdown 中提取 ``## User`` / ``## Initial Query`` 段落正文。
 
     返回 ``(sections, has_malformed_user_header)``。TaskAgent 只认可
-    ``## User`` 标题作为切分信号，因此这里使用同一类信号做入口判定。
+    ``## User`` 标题作为切分信号；入口校验同时接受 ``## Initial Query``
+    （所有 ecosystem adapter 均把首条用户消息写为该标题），避免单轮对话
+    轨迹（codex_single 等）被误判为 no_user_intent。
     """
     sections: list[str] = []
     current: list[str] | None = None
@@ -152,7 +155,7 @@ def _extract_user_sections(md_text: str) -> tuple[list[str], bool]:
             if current is not None:
                 sections.append("".join(current))
                 current = None
-            if _USER_HEADER_RE.match(stripped):
+            if _USER_HEADER_RE.match(stripped) or _INITIAL_QUERY_RE.match(stripped):
                 current = []
             elif stripped.lower().startswith("## user"):
                 malformed_user_header = True

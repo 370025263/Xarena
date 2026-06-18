@@ -54,7 +54,22 @@ llm:
   max_tokens: 10000      # optional; a "thinking" model needs enough budget for
                          # reasoning_tokens + content, or meta extraction
                          # returns empty/truncated and falls back to rules.
+  # max_context: 200000  # optional; the model's CONTEXT-WINDOW size in tokens.
+                         # The windowless single-pass splitter (TaskAgent) uses
+                         # this as the denominator for context self-management:
+                         # it proactively trims old `look` tool results at 85%
+                         # of this budget. Leave commented to use the 200K
+                         # default (a warning is logged). Uncomment and set it
+                         # to YOUR model's real context limit (e.g. 128000 for
+                         # gpt-4o, 64000 for deepseek-chat).
   # temperature: 0.0     # optional; default 0 (deterministic)
+  # request_timeout: 60  # optional; per-request wall-clock cap in seconds
+                         # (default 60). Explicit so an unreachable endpoint
+                         # fails loud instead of hanging forever.
+  # connect_timeout: 10  # optional; TCP-connect cap in seconds (default 10).
+  # client_max_retries: 0 # optional; openai-SDK client retries (default 0 —
+                         # transient-error retries are handled by xskill's own
+                         # retry wrapper; client retries would multiply).
   # rate_limit:          # optional; absent = unlimited (good for self-hosted)
   #   rpm: 60            # requests per minute; match your provider plan
   #   tpm: 100000        # tokens per minute (optional within rate_limit)
@@ -100,6 +115,29 @@ canary:
   total_samples: 20             # model-scoped path: total UX scores needed on
                                 # each side before a weighted decision
 
+# ===== Skill description trigger optimization =====
+# Before each promotion commit (baby→main / main→staging) the daemon runs a
+# deterministic hill-climb to tune the SKILL.md frontmatter `description` for
+# trigger accuracy: it generates ~N eval queries, asks the LLM-as-judge which
+# skill it would invoke, iteratively rewrites the description, and keeps the
+# variant that scores highest on a held-out TEST split (anti-overfit). All LLM
+# calls reuse the `llm` above (rate_limit applies). Failure never blocks the
+# commit. Archived under `<skill>/.description_optimization/` (NOT versioned).
+skill_opt:
+  enabled:            true   # set false to disable optimization entirely (no-op)
+  n_cases:            20     # eval queries generated per skill (cached + reused)
+  runs_per_case:      3      # probe runs per query; trigger = hit >= 0.5 of runs
+  max_iters:          5      # max improve-description iterations (candidates)
+  max_llm_calls:      400    # hard cap on total LLM/probe calls per run
+  train_frac:         0.6    # stratified train fraction; rest is held-out test
+  seed:               42     # fixed RNG seed → deterministic split
+  catalog_max_skills: 12     # decoy-catalog size (mirrors CC listing budget)
+  catalog_desc_cap:   256    # per-skill description truncation fed to the probe
+  probe_case_timeout: 60     # per-probe-case wall-clock cap (seconds); a stuck
+                             # probe counts as "not triggered" instead of
+                             # hanging the optimization loop. 0 disables.
+  rerun_enabled:      true    # dashboard "re-run case" action endpoint on/off
+
 # ===== Watcher (the directory poller inside `serve`) =====
 watcher:
   poll_interval:  30            # seconds between scans of every watch_dir
@@ -108,20 +146,56 @@ watcher:
                                 # above. Raise to 20-30 for self-hosted vLLM
                                 # or accounts with no concurrency cap. See
                                 # docs/adr/0001-rate-limit-diy-not-litellm.md
-  cold_start_threshold: 3       # defer process while >= N trajectories un-indexed
+  # cluster_batch_size: 8       # atoms consumed per ClusterAgent call. The
+                                # watcher pools un-clustered atoms ACROSS all
+                                # indexed trajectories, drops those already in a
+                                # skill's .candidates.yml, then feeds up to N at
+                                # a time to ONE ClusterAgent (one LLM round-trip
+                                # handles N atom positions instead of one). The
+                                # agent still reads each atom's content on demand
+                                # via tools — only the positions are batched.
+                                # Clustering stays serial (one batch in flight per
+                                # watch dir). Default 8; set 1 for the old
+                                # one-atom-per-call behavior.
+
+# ===== Ingest (bridging native agent sessions into traj_*.md) =====
+# 各生态 session ingester（claude_code / codex / openclaw / cursor 的 JSONL
+# 桥接）入库行为。
+ingest:
+  settle_seconds: 120   # 入库完成屏障：源 session 文件最后修改距今 < N 秒视为
+                        # "还在写"，本轮不入库，等停笔满 N 秒后的下一轮 poll 再
+                        # 转换——避免把刚开跑的 session 定格成只有题面的残骸。
+                        # 已入库后源文件又增长的 session 会被重新转换覆盖
+                        # （并重置该轨迹已拆出的 atom，等价 rebuild --traj）。
+                        # 真实用户 session 动辄几十分钟，调太小会截断；
+                        # 评测场景（脚本批量产 session、写完即定稿）建议 5~15。
+  mask_patterns: []     # 去壳掩码：正则列表。入库转换写 md 之前，把命中的文本段
+                        # 替换为 [MASKED_HARNESS_PROMPT] 占位符——用于剥掉评测
+                        # harness 每题固定的 turn-0 提示词，防聚类被任务外壳吸住。
+                        # 默认空列表 = 完全不替换（现网用户不受影响）。
+                        # 跨行匹配用内联 flag，例：'(?s)HARNESS_BEGIN.*?HARNESS_END'
 
 # ===== Team C/S mode (only read by `xskill serve --server`) =====
+# 仅 server 端读这一段。客户端（`xskill connect <host:port> --token ...`）是瘦
+# 进程，不读 config.yaml——连接信息落 ~/.xskill/team_client.json；每个 server 的
+# 上传游标 / 去抖 / 安装历史独立落 ~/.xskill/clients/<server_id>/，换 server 互不
+# 污染。server 启动打印的 join token 落 ~/.xskill/team_server.json，再发给客户端。
 team:
   server:
-    traj_root:    ~/.xskill/team_trajectories
-    skill_slots:  100
-    ranked_slots: 80
+    traj_root:    ~/.xskill/team_trajectories  # 收下的客户端上传轨迹根目录
+    skill_slots:  100   # 每个客户端 manifest 的技能槽位上限（ranked + recommended）
+    ranked_slots: 80    # 其中按 UX 分排名占的槽位；剩余（100-80=20）留给向量推荐
 
 # ===== Dashboard (the built-in web console served by `xskill serve`) =====
 dashboard:
   enabled:  false      # 设 true 才挂载控制台到 serve 的 /
   public:   false      # 默认仅本机可达；true 才放行公网（仅看板路由）
   password: ""         # 可选；非空时看板要求 HTTP Basic 登录（API 不受影响）
+  # 历史轨迹没记 coding agent(harness) / 模型(source_model) 时，看板按什么归类。
+  # 留空 → 'unknown'（保持原行为）。填了 → 这些缺失字段的轨迹归到该值的桶里。
+  # 仅影响看板的“生态/模型”分组展示，不改库里的真实值，也不影响 canary 路由。
+  default_harness: ""  # 例：claude_code（须是已知 harness 才会并入现有分组）
+  default_model:   ""  # 例：deepseek-v4-flash（模型名无封闭集，自由填）
 """
 
 
@@ -169,14 +243,93 @@ def get_config() -> dict:
     return _config
 
 
+def _resolve_attribution(dashboard_section: dict) -> dict:
+    """把 dashboard 段的 default_harness / default_model 解析成看板用的归类标签。
+
+    留空（缺省 / 空串 / 全空白）→ 'unknown'，即保持历史行为；非空则去首尾空白后
+    原样用作缺失字段的归类桶。harness 不在此做白名单校验——按设计取自由字符串。
+    """
+    return {
+        "harness": str(dashboard_section.get("default_harness") or "").strip() or "unknown",
+        "model": str(dashboard_section.get("default_model") or "").strip() or "unknown",
+    }
+
+
 def dashboard_config(cfg: dict) -> dict:
     """从已加载 config 取 dashboard 段，缺字段用显式默认（非 fallback 兼容）。"""
     d = cfg.get("dashboard") or {}
+    attr = _resolve_attribution(d)
     return {
         "enabled": bool(d.get("enabled", False)),
         "public": bool(d.get("public", False)),
         "password": str(d.get("password", "") or ""),
+        "default_harness": attr["harness"],
+        "default_model": attr["model"],
     }
+
+
+def dashboard_attribution_defaults(path: Optional[Path] = None) -> dict:
+    """看板归类默认值（default_harness / default_model），直接读 config.yaml 的
+    dashboard 段，**不校验 llm/embedding api_key**——独立只读看板实例（瘦进程，
+    可能没配 key）也要能用。返回 ``{"harness": <label>, "model": <label>}``，
+    留空均退 'unknown'。
+
+    config.yaml 不存在时同样返回 'unknown' 这组默认——这是看板展示偏好的显式
+    缺省（与 ``dashboard_config`` 给 enabled/password 显式默认同性质），不是吞错。
+    """
+    cfg_path = Path(path) if path else CONFIG_PATH
+    section: dict = {}
+    if cfg_path.exists():
+        with open(cfg_path, encoding="utf-8") as f:
+            section = (yaml.safe_load(f) or {}).get("dashboard") or {}
+    return _resolve_attribution(section)
+
+
+# ingest.settle_seconds 缺省值。区间权衡：真实用户 session 动辄几十分钟，
+# 过短（<60s）在长思考/长工具调用间隙就会误判"已写完"提前定格；过长则新
+# session 入库延迟无谓变大。120s 落在建议区间（90~180s）中段。
+INGEST_SETTLE_SECONDS_DEFAULT = 120.0
+
+
+def ingest_config(path: Optional[Path] = None) -> dict:
+    """读 config.yaml 的 ingest 段，缺字段用显式默认（非 fallback 兼容）。
+
+    与 ``dashboard_attribution_defaults`` 同性质：**不校验 llm/embedding
+    api_key**——team 瘦客户端 / 一次性 CLI 桥接（没配 key 的环境）也要能
+    桥轨迹；config.yaml 不存在时返回全默认。
+
+    返回 ``{"settle_seconds": float, "mask_patterns": list[str]}``。
+    ``mask_patterns`` 在此即编译校验——坏正则 / 非列表直接抛 ValueError
+    （CLAUDE.md：遇到问题 throw error，不静默吞掉让掩码失效）。
+    """
+    import re as _re
+
+    cfg_path = Path(path) if path else CONFIG_PATH
+    section: dict = {}
+    if cfg_path.exists():
+        with open(cfg_path, encoding="utf-8") as f:
+            section = (yaml.safe_load(f) or {}).get("ingest") or {}
+
+    settle = section.get("settle_seconds", INGEST_SETTLE_SECONDS_DEFAULT)
+    raw_patterns = section.get("mask_patterns") or []
+    if not isinstance(raw_patterns, list):
+        raise ValueError(
+            f"ingest.mask_patterns 必须是正则列表，got {type(raw_patterns).__name__}"
+        )
+    patterns: list[str] = []
+    for i, p in enumerate(raw_patterns):
+        if not isinstance(p, str):
+            raise ValueError(
+                f"ingest.mask_patterns[{i}] 必须是字符串正则，got {type(p).__name__}"
+            )
+        try:
+            _re.compile(p)
+        except _re.error as e:
+            raise ValueError(
+                f"ingest.mask_patterns[{i}] 不是合法正则 {p!r}: {e}"
+            ) from e
+        patterns.append(p)
+    return {"settle_seconds": float(settle), "mask_patterns": patterns}
 
 
 def get_skill_dir() -> Path:
@@ -212,6 +365,17 @@ def get_traj_dir() -> Path:
     return Path(dirs[0]["path"])
 
 
+def get_uploads_dir() -> Path:
+    """上传 db 文件的落盘根目录（``~/.xskill/uploads``）。
+
+    HTTP 上传端口把收到的 db 存到 ``uploads/<eco>/<client_id>/`` 下，再由
+    ``xskill read`` 入库。按 client 分子目录隔离多用户同名 ``ngagent.db``。
+    """
+    d = XSKILL_HOME / "uploads"
+    d.mkdir(parents=True, exist_ok=True)
+    return d
+
+
 def get_registry_db_path() -> Path:
     return REGISTRY_DB
 
@@ -238,6 +402,52 @@ def get_team_clients_db_path() -> Path:
 def get_team_client_state_path() -> Path:
     """client 端连接信息（server_url / client_id / join_token）。"""
     return XSKILL_HOME / "team_client.json"
+
+
+def _server_scope_id(server_url: str) -> str:
+    """把 server_url 映射成文件系统安全、且按 server 唯一的作用域 id。
+
+    形如 ``7.220.144.233_9961-1a2b3c4d``：前半是可读的 host_port（排错时
+    一眼能认出连的是哪台），后半是规范化 url 的短哈希消歧（不同 url 规范化
+    后撞到同一可读前缀时仍能区分）。规范化会去掉首尾空白与末尾斜杠，所以
+    ``http://h:p`` 与 ``http://h:p/`` 视为同一 server。
+    """
+    import hashlib
+    import re
+    norm = server_url.strip().rstrip("/")
+    netloc = norm.split("://", 1)[-1]
+    safe = re.sub(r"[^A-Za-z0-9.]+", "_", netloc).strip("_") or "server"
+    digest = hashlib.sha256(norm.encode("utf-8")).hexdigest()[:8]
+    return f"{safe}-{digest}"
+
+
+def get_team_client_dir(server_url: str) -> Path:
+    """client 端按 server 隔离的可变状态目录：~/.xskill/clients/<server_id>/。
+
+    上传游标 / 去抖 / 安装历史都落这里。换 server 时天然落到不同目录——不会
+    再被上一个 server 的"已上传"游标静默压制对新 server 的上传（方案 A）。
+    """
+    d = XSKILL_HOME / "clients" / _server_scope_id(server_url)
+    d.mkdir(parents=True, exist_ok=True)
+    return d
+
+
+def get_team_client_cursor_path(server_url: str) -> Path:
+    """client 端上传游标（traj_id -> 已上传内容 sha256），按 server 分目录。
+
+    去抖 sidecar 由 collector 从本路径派生（``cursor.debounce.json``），自动
+    同目录隔离。
+    """
+    return get_team_client_dir(server_url) / "cursor.json"
+
+
+def get_team_client_history_path(server_url: str) -> Path:
+    """client 端安装历史（reconcile 落的 side 时间序列），按 server 分目录。
+
+    注意这与 server/standalone 模式的 ``XSKILL_HOME/install_history.jsonl``
+    是不同文件：那条是本机自身 canary 归因用的，与"连了哪个 server"无关。
+    """
+    return get_team_client_dir(server_url) / "install_history.jsonl"
 
 
 # 注：team client 不另开 team_skills/ / team_outbox/ 目录——

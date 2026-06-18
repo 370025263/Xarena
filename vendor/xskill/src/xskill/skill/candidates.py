@@ -28,7 +28,7 @@ import yaml
 
 from xskill.skill.frontmatter import parse as fm_parse, serialize as fm_serialize
 
-logger = logging.getLogger("candidates")
+logger = logging.getLogger("xskill.candidates")
 
 CANDIDATES_FILENAME = ".candidates.yml"
 FUZZY_PREFIX = 60

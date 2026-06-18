@@ -123,8 +123,14 @@ def skills_catalog(skill_dir: Path) -> list[dict]:
 
 
 class DashboardMetrics:
-    def __init__(self, db_path: Optional[Path] = None):
+    def __init__(self, db_path: Optional[Path] = None, *,
+                 unknown_harness: str = "unknown",
+                 unknown_model: str = "unknown"):
         self._db = db_path
+        # 历史轨迹缺 source_harness / source_model 时的归类桶（看板展示口径）。
+        # 默认 'unknown'；看板路由按 config.dashboard.default_harness/_model 传入覆盖。
+        self._unknown_harness = unknown_harness
+        self._unknown_model = unknown_model
 
     def overview(self) -> dict:
         conn = get_connection(self._db)
@@ -159,9 +165,10 @@ class DashboardMetrics:
         # team_client（每 client 一个目录的内部标签）对用户无意义：改按该轨迹
         # 真实 coding agent（source_harness）分组,harness 缺失才退回 'unknown'
         # ——不再把内部的 team_client 当作一个"生态"暴露给用户。
+        # 兜底标签经命名参数 :hlabel 注入（自由字符串，防 SQL 注入/引号问题）。
         eco_expr = (
             "CASE WHEN wd.ecosystem='team_client'"
-            " THEN COALESCE(NULLIF(t.source_harness,''),'unknown')"
+            " THEN COALESCE(NULLIF(t.source_harness,''),:hlabel)"
             " ELSE wd.ecosystem END"
         )
         conn = get_connection(self._db)
@@ -172,7 +179,8 @@ class DashboardMetrics:
                 " SUM(CASE WHEN t.skill_generated IS NOT NULL AND t.skill_generated!='' THEN 1 ELSE 0 END) skills,"
                 " AVG(t.ux_score) avg_ux"
                 " FROM watch_dirs wd LEFT JOIN trajectories t ON t.watch_dir_id=wd.id"
-                f" GROUP BY {eco_expr} ORDER BY trajs DESC"
+                f" GROUP BY {eco_expr} ORDER BY trajs DESC",
+                {"hlabel": self._unknown_harness},
             ).fetchall()
         finally:
             conn.close()
@@ -182,11 +190,12 @@ class DashboardMetrics:
         conn = get_connection(self._db)
         try:
             rows = conn.execute(
-                "SELECT COALESCE(source_model,'unknown') model, COUNT(*) trajs,"
+                "SELECT COALESCE(source_model,:mlabel) model, COUNT(*) trajs,"
                 " COALESCE(SUM(tasks_extracted),0) atoms,"
                 " SUM(CASE WHEN skill_generated IS NOT NULL AND skill_generated!='' THEN 1 ELSE 0 END) skills,"
                 " AVG(ux_score) avg_ux FROM trajectories"
-                " GROUP BY COALESCE(source_model,'unknown') ORDER BY trajs DESC"
+                " GROUP BY COALESCE(source_model,:mlabel) ORDER BY trajs DESC",
+                {"mlabel": self._unknown_model},
             ).fetchall()
         finally:
             conn.close()
@@ -332,4 +341,140 @@ class DashboardMetrics:
             "avg_atoms": round((r["atoms"] or 0) / t, 2) if t else 0.0,
             "skills": r["skills"] or 0,
             "avg_ux": round(r["avg_ux"], 2) if r["avg_ux"] is not None else 0.0,
+        }
+
+    # ── 0.6.1a1 看板：单 skill 详情 / 版本统计 / 时序 ────────────────
+
+    def _skill_traj_rows(self, name: str) -> list[dict]:
+        """某 skill 被触发过的所有轨迹（含 sha / ux / 用户 / 文件路径）。
+
+        skill 版本(sha)**不从 DB 列读**，而是查询时从每条 traj 的 .md 头
+        ``<!-- xskill:skill=X side=Y sha=Z -->`` 分析式解析——与工具调用/ token
+        同属"按轨迹文本现算"，免迁移、不动打分写路径。
+        """
+        from xskill.pipeline.trajectory import parse_traj_header
+        conn = get_connection(self._db)
+        try:
+            rows = conn.execute(
+                "SELECT t.ux_score ux, t.filename fn,"
+                " w.label cid, t.updated_at ts, w.path wpath"
+                " FROM trajectories t JOIN watch_dirs w ON t.watch_dir_id=w.id"
+                " WHERE t.skill_used=? ", (name,),
+            ).fetchall()
+        finally:
+            conn.close()
+        out = []
+        for r in rows:
+            d = dict(r)
+            md = Path(d["wpath"]) / d["fn"]
+            sha = ""
+            if md.is_file():
+                try:
+                    header = parse_traj_header(md.read_text(encoding="utf-8")) or {}
+                    sha = header.get("sha", "") or ""
+                except OSError:
+                    sha = ""
+            d["sha"] = sha or "unknown"
+            out.append(d)
+        return out
+
+    @staticmethod
+    def _atom_aggregate(rows: list[dict]) -> tuple[int, int, int]:
+        """对一组轨迹的所有 atom 累计 (工具调用数, 估算 token, atom 数)。
+
+        从 ``<wpath>/<traj_id>/tasks/atom_*.json`` 读 ``raw_segment`` 做分析式
+        计算（不靠埋点，见 utils.traj_analysis）。atom 文件缺失则跳过。
+        """
+        import json
+        from xskill.utils.traj_analysis import count_tool_calls, estimate_tokens
+        tool_calls = tokens = n_atoms = 0
+        for r in rows:
+            fn = r["fn"]
+            stem = fn[:-3] if fn.endswith(".md") else fn
+            tasks = Path(r["wpath"]) / stem / "tasks"
+            if not tasks.is_dir():
+                continue
+            for af in tasks.glob("atom_*.json"):
+                try:
+                    seg = json.loads(af.read_text(encoding="utf-8")).get("raw_segment", "")
+                except (OSError, ValueError):
+                    continue
+                tool_calls += count_tool_calls(seg)
+                tokens += estimate_tokens(seg)
+                n_atoms += 1
+        return tool_calls, tokens, n_atoms
+
+    def skill_version_stats(self, name: str) -> list[dict]:
+        """按版本(sha)分组：每版本触发次数 + 平均 UX + 平均工具调用 + 平均 token。
+
+        token / 工具调用是对该版本命中轨迹的 atom 做分析式聚合（不埋点）。
+        """
+        rows = self._skill_traj_rows(name)
+        by_sha: dict[str, list[dict]] = {}
+        for r in rows:
+            by_sha.setdefault(r["sha"] or "unknown", []).append(r)
+        out = []
+        for sha, items in by_sha.items():
+            tc, tok, na = self._atom_aggregate(items)
+            uxs = [i["ux"] for i in items if i["ux"] is not None]
+            out.append({
+                "sha": sha,
+                "triggers": len(items),
+                "avg_ux": round(sum(uxs) / len(uxs), 2) if uxs else None,
+                "atoms": na,
+                "avg_tool_calls": round(tc / na, 2) if na else 0.0,
+                "avg_tokens": round(tok / na, 2) if na else 0.0,
+            })
+        out.sort(key=lambda d: (d["sha"] == "unknown", d["sha"]))
+        return out
+
+    def skill_by_user(self, name: str) -> list[dict]:
+        """某 skill 按用户分组的触发次数 + 平均 UX（D11 按用户切片）。
+
+        用户身份取 watch_dir.label（team server 上即 client_id）——现算 JOIN，
+        不在轨迹表落冗余 client_id 列，保持"分析而非埋点"一致、免迁移。
+        """
+        conn = get_connection(self._db)
+        try:
+            rows = conn.execute(
+                "SELECT COALESCE(w.label,'(local)') user, COUNT(*) triggers,"
+                " AVG(t.ux_score) avg_ux"
+                " FROM trajectories t JOIN watch_dirs w ON t.watch_dir_id=w.id"
+                " WHERE t.skill_used=? GROUP BY w.label ORDER BY triggers DESC",
+                (name,),
+            ).fetchall()
+            return [{"user": r["user"], "triggers": r["triggers"],
+                     "avg_ux": round(r["avg_ux"], 2) if r["avg_ux"] is not None else None}
+                    for r in rows]
+        finally:
+            conn.close()
+
+    def skill_timeseries(self, name: str, sha: Optional[str] = None) -> list[dict]:
+        """时序点：``sha`` 给定 → 该版本内各轨迹按时间的 UX 瞬时序列；
+        ``sha`` 为 None → 跨版本聚合点（每版本一个 UX 均值，看进化趋势）。
+        """
+        if sha is None:
+            return [{"x": v["sha"], "ux": v["avg_ux"], "triggers": v["triggers"]}
+                    for v in self.skill_version_stats(name)]
+        # 版本内瞬时序列：取该版本命中的轨迹，按时间排，UX 逐点（sha 来自 .md 头）
+        pts = [{"x": r["ts"], "ux": r["ux"]}
+               for r in self._skill_traj_rows(name)
+               if r["sha"] == sha and r["ux"] is not None]
+        pts.sort(key=lambda p: p["x"] or "")
+        return pts
+
+    def skill_detail(self, name: str) -> dict:
+        """单 skill 详情聚合：真实总触发次数 + 版本统计 + 按用户。
+
+        总触发次数从 trajectories 实算（替代 SKILL.md frontmatter 里的陈旧
+        use_count，D7）。
+        """
+        versions = self.skill_version_stats(name)
+        total = sum(v["triggers"] for v in versions)
+        return {
+            "name": name,
+            "total_triggers": total,
+            "versions": versions,
+            "by_user": self.skill_by_user(name),
+            "trend": self.skill_timeseries(name, sha=None),
         }

@@ -13,6 +13,9 @@ def mount_dashboard(app, cfg: dict, *, db_path: Optional[Path] = None) -> None:
     dc = dashboard_config(cfg)
     if not dc["enabled"]:
         return
-    app.include_router(build_dashboard_router(db_path=db_path))
+    app.include_router(build_dashboard_router(
+        db_path=db_path,
+        default_harness=dc["default_harness"],
+        default_model=dc["default_model"]))
     app.add_middleware(DashboardAccessMiddleware, public=dc["public"],
                        password=dc["password"])

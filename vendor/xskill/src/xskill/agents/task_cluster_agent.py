@@ -136,10 +136,11 @@ def build_skill_catalog_block(skill_dir: Path, max_chars: int) -> str:
     return "\n".join(out_lines)
 
 
-SYSTEM_PROMPT_TEMPLATE = """你是 TaskClusterAgent。我会给你一个 AtomTask（用户的一段
-完整意图 + agent 的执行复盘）；你决定它是否值得被某个 skill 收录，应该归到哪个
-已有 skill（用 add_task_to_skill），或者应该新建一个 skill 容纳它（用
-NewSkillFolder 再 add_task_to_skill）。
+SYSTEM_PROMPT_TEMPLATE = """你是 TaskClusterAgent。我会给你一个或多个 AtomTask（每个是
+用户的一段完整意图 + agent 的执行复盘）；当给你多个时**逐个独立处理**，互不影响。
+对每个 AtomTask 你决定它是否值得被某个 skill 收录，应该归到哪个已有 skill（用
+add_task_to_skill），或者应该新建一个 skill 容纳它（用 NewSkillFolder 再
+add_task_to_skill）。**每个 AtomTask 都必须 add_task_to_skill，一个都不能漏。**
 
 # 可用工具
 - AtomTaskRead(atom_id) — 读 atom 完整 JSON（intent / summary / raw_segment 全字段）
@@ -230,9 +231,9 @@ NewSkillFolder 再 add_task_to_skill）。
 
 # 渐进收敛策略
 
-冷启动期间 cluster **串行**跑（系统在 watcher 层强制 max_concurrent=1），你
-**逐条**看到 catalog 演化，每条新 atom 都能看见上一条 cluster 的产物。这避免
-了并发创建近义 slug。
+cluster 在 watcher 层**始终串行**（同一目录同时只跑一个 batch），所以你**逐批**
+看到 catalog 演化，每一批都能看见前一批 cluster 的产物。这避免了并发创建近义
+slug。同一批里如给了多个 atom，也请逐个处理、彼此独立。
 
 # 硬禁止
 - 不要为了"做点事"乱打高分。低质 atom 就别加，会污染 candidates 触发劣质 skill。
@@ -278,5 +279,62 @@ class TaskClusterAgent:
             instructions=[sysprompt],
             tools=self.tools,
         )
-        result = agent.run(user_msg)
+        # 逐轮 CoT/工具调用 → logs/agents/task_cluster_agents/<traj_id>/<atom_id>.log
+        from xskill.agents.agent_trace import trace_to
+        from xskill.config import get_logs_dir
+        sink = (get_logs_dir() / "agents" / "task_cluster_agents"
+                / atom.traj_id / f"{atom.atom_id}.log")
+        with trace_to(sink):
+            result = agent.run(user_msg)
+        return getattr(result, "content", "") or ""
+
+    def process_batch(self, atoms: list[AtomTask]) -> str:
+        """一次 cluster 决策覆盖一批 atom（逐个归类），返回 agent 的 final content。
+
+        与 ``process``（单 atom）共用同一 system prompt；user 消息把整批 atom 的
+        **位置**（atom_id / traj_id / intent / summary / tags / 行号）逐条列出，
+        要求 agent 逐个 ``add_task_to_skill``。atom 的完整内容仍由 agent 按需用
+        ``AtomTaskRead`` / ``ReadTraj`` 工具拉取——批量的是"位置"而非"内容"，
+        把"逐 atom 一次 LLM 往返"压成"一批一次往返"。
+
+        ``atoms`` 可能跨多条轨迹（watcher 跨轨迹池化）。空列表直接返回空串。
+        """
+        if not atoms:
+            return ""
+        catalog = build_skill_catalog_block(
+            self.skill_dir, self.sysprompt_budget_chars,
+        )
+        sysprompt = SYSTEM_PROMPT_TEMPLATE.format(skill_catalog=catalog)
+
+        blocks: list[str] = []
+        for i, atom in enumerate(atoms, 1):
+            blocks.append(
+                f"[{i}/{len(atoms)}]\n"
+                f"  atom_id:   {atom.atom_id}\n"
+                f"  traj_id:   {atom.traj_id}\n"
+                f"  intent:    {atom.intent}\n"
+                f"  summary:   {atom.summary}\n"
+                f"  tags:      {atom.tags}\n"
+                f"  used_skills (agent 自报): {atom.used_skills}\n"
+                f"  ux_score:  {atom.ux_score}\n"
+                f"  lines:     [{atom.offset_start}..{atom.offset_end}) (1-based 行号)"
+            )
+        user_msg = (
+            f"待分类 AtomTask 共 {len(atoms)} 个，请**逐个**按系统指令处理，每个都必须"
+            f" add_task_to_skill（任何分数都不允许跳过、不能静默漏掉任何一个）：\n\n"
+            + "\n\n".join(blocks)
+        )
+
+        agent = self.agno_agent_factory(
+            instructions=[sysprompt],
+            tools=self.tools,
+        )
+        from xskill.agents.agent_trace import trace_to
+        from xskill.config import get_logs_dir
+        # 批量可能跨轨迹——按首 atom 的 traj_id 归档，文件名带 batch 标识与规模。
+        first = atoms[0]
+        sink = (get_logs_dir() / "agents" / "task_cluster_agents"
+                / first.traj_id / f"batch_{first.atom_id}_n{len(atoms)}.log")
+        with trace_to(sink):
+            result = agent.run(user_msg)
         return getattr(result, "content", "") or ""
