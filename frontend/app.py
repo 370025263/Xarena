@@ -2037,6 +2037,58 @@ div[data-testid="stDataFrame"] { border-radius: 12px; }
                             )
 
     # ==========================
+    # 5.5) 榜单自定义结果视图（沙箱纯渲染器）
+    # ----------------------------------------
+    # 榜单若自带 result_view_html（由 evaluator 回传缓存），则在打开某条 submission
+    # 明细时，用「嵌套沙箱 iframe」渲染榜单提供的 HTML/JS，并注入 DATA（= 该 submission
+    # 的 /extra JSON）。榜单 JS 仅读 DATA 绘制 DOM——不持 token、不发网络请求。
+    # 没有自定义视图的榜单完全走原有默认渲染，行为不变。
+    # ==========================
+    if st.session_state.token:
+        _rv = api_get(f"leaderboard/{leaderboard_id}/result-view")
+        if isinstance(_rv, dict) and _rv.get("has_custom") and _rv.get("html"):
+            st.markdown("<div class='hr'></div>", unsafe_allow_html=True)
+            st.subheader("🧩 自定义结果视图（榜单自带面板）")
+
+            _rv_opts = {}
+            for _r in rows:
+                _sid = _r.get("submission_id") or _r.get("id")
+                if not _sid:
+                    continue
+                _lbl = (
+                    f"#{_sid} · {_r.get('submission_name') or _r.get('name') or ''} "
+                    f"({_r.get('username','')})"
+                )
+                _rv_opts[_lbl] = _sid
+
+            if not _rv_opts:
+                st.info("当前榜单暂无可展示的提交明细。")
+            else:
+                _pick = st.selectbox(
+                    "选择要查看明细的提交：",
+                    options=list(_rv_opts.keys()),
+                    key=f"rv_pick_{leaderboard_id}",
+                )
+                _pick_sid = _rv_opts[_pick]
+                _extra = api_get(f"submission/{_pick_sid}/extra")
+                if not isinstance(_extra, dict):
+                    st.warning("无法获取该提交的明细数据。")
+                else:
+                    _inner = (
+                        "<script>const DATA = "
+                        + json.dumps(_extra)
+                        + ";</script>\n"
+                        + _rv["html"]
+                    )
+                    _outer = (
+                        '<iframe sandbox="allow-scripts" srcdoc="'
+                        + html_escape(_inner, quote=True)
+                        + '" style="width:100%;height:760px;border:0;background:#fff">'
+                        + "</iframe>"
+                    )
+                    components.html(_outer, height=780, scrolling=True)
+
+    # ==========================
     # 6) Excel 下载入口（完整保留 + ✅ 单算法表新增 commitid 列）
     # ==========================
     st.markdown("<div class='hr'></div>", unsafe_allow_html=True)
