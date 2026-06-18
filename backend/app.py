@@ -2093,6 +2093,12 @@ def create_job_manifest(
     models_mount = client.V1VolumeMount(name="models-vol", mount_path="/models")
     shared_mount = client.V1VolumeMount(name="shared-volume", mount_path="/shared")
 
+    # 通用产物目录（不耦合 phase）：/models/xarena/<bench_slug>/<jobid>
+    # 两容器都挂了 /models（hostPath，跨 pod 持久）；各自把输出拷到 $OUTPUT_DIR/{eval,algo}。
+    _board = Leaderboard.query.get(leaderboard_id)
+    _bench_slug = re.sub(r"[^a-z0-9]+", "-", ((_board.name if _board else "") or "").lower()).strip("-")[:40] or f"lb{leaderboard_id}"
+    output_dir = f"/models/xarena/{_bench_slug}/{job_name}"
+
     # 准备注入的额外 ENV（已做优先级合并与过滤）
     extra_env = _sanitize_env_dict(extra_env or {})
     extra_env_vars = _dict_to_envvars(extra_env)
@@ -2103,6 +2109,7 @@ def create_job_manifest(
         client.V1EnvVar(name="LEADERBOARD_ID", value=str(leaderboard_id)),
         client.V1EnvVar(name="API_INTERNAL_URL", value=os.environ.get("API_INTERNAL_URL", "http://leaderboard-api-svc:80")),
         client.V1EnvVar(name="ALGO_API_ENDPOINT", value=os.environ.get("ALGO_API_ENDPOINT", "http://localhost:5000")),
+        client.V1EnvVar(name="OUTPUT_DIR", value=output_dir),
     ]
     # 如果给定 qa_file_env，注入 QA_FILE（覆盖容器默认），这是 evaluator 将读取的入口
     if qa_file_env:
@@ -2113,6 +2120,7 @@ def create_job_manifest(
         client.V1EnvVar(name="SUBMISSION_ID", value=str(submission_id)),
         client.V1EnvVar(name="LEADERBOARD_ID", value=str(leaderboard_id)),
         client.V1EnvVar(name="API_INTERNAL_URL", value=os.environ.get("API_INTERNAL_URL", "http://leaderboard-api-svc:80")),
+        client.V1EnvVar(name="OUTPUT_DIR", value=output_dir),
     ]
 
     # EVAL container
