@@ -2215,6 +2215,37 @@ def _serve_internal_uploads(filename):
     # 注意：该接口应只在内部网络或认证下使用
     return send_from_directory(UPLOADS_HOST_PATH, filename, as_attachment=True)
 
+
+@app.route('/api/submission/<int:sub_id>/extra', methods=['GET'])
+@jwt_required()
+def get_submission_extra(sub_id):
+    """查看某次提交回传的 extraconfig（submission_eval_details.extra_json）。"""
+    sub = Submission.query.get(sub_id)
+    if not sub:
+        return jsonify({"msg": "submission not found"}), 404
+    uid = get_jwt_identity()
+    me = User.query.get(uid)
+    board = Leaderboard.query.get(sub.leaderboard_id)
+    is_admin = bool(me and me.role == 'admin')
+    is_owner = (str(sub.user_id) == str(uid))
+    is_board_owner = bool(board and str(board.owner_id) == str(uid))
+    if not (is_admin or is_owner or is_board_owner):
+        return jsonify({"msg": "forbidden"}), 403
+    qid = request.args.get('question_id')
+    q = SubmissionEvalDetail.query.filter_by(submission_id=sub_id)
+    if qid:
+        q = q.filter_by(question_id=str(qid))
+    rows = q.limit(int(request.args.get('limit', 200))).all()
+    items = []
+    for r in rows:
+        try:
+            extra = json.loads(r.extra_json) if r.extra_json else None
+        except Exception:
+            extra = None
+        items.append({"question_id": r.question_id, "is_correct": r.is_correct,
+                      "pred_answer": r.pred_answer, "extra": extra})
+    return jsonify({"submission_id": sub_id, "count": len(items), "items": items})
+
 @app.route("/api/submission/upload", methods=["POST"])
 @jwt_required(optional=True)
 def upload_submission_and_submit_job():
