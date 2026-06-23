@@ -108,6 +108,13 @@ class DirectoryWatcher:
             Path(install_history_path) if install_history_path
             else XSKILL_HOME / "install_history.jsonl"
         )
+        # 冷启动 epoch 屏障：config['cold_start'] 控制。默认关闭（active=False）
+        # → 走正常在线增量。屏障 sentinel 默认落在 home_root（测试注入的 tmp 或
+        # daemon --home）下，缺省回退 XSKILL_HOME。见 pipeline/cold_start.py。
+        from xskill.pipeline.cold_start import ColdStartController
+        self._cold_start = ColdStartController.from_config(
+            self.config, self.home_root or XSKILL_HOME,
+        )
         self.poll_interval = poll_interval
         self.max_concurrent = max_concurrent
         self.max_retries = max_retries
@@ -236,7 +243,7 @@ class DirectoryWatcher:
         # 已满阈值的 skill 仍能在每轮 scan 中被检出 + 触发 SkillEdit。
         # 不放在 _scan_dir 内是因为 skill_dir 不是 watch_dir，跟 wd 循环
         # 无关——每个 watcher 只有一个全局 skill_dir。
-        self._check_pending_skill_edits()
+        self._run_skill_edit_step()
 
         # ── Step 6: 灰度判定独立轮询 ──
         # 对每个 staging 分支存在的 skill 跑 AtomCanary.check_and_decide：
@@ -263,8 +270,37 @@ class DirectoryWatcher:
         if not self.server_mode:
             self._reconcile_skill_sides()
 
-    def _check_pending_skill_edits(self):
+    def _run_skill_edit_step(self):
+        """Step 5 的冷启动感知封装。
+
+        冷启动阶段（``_cold_start.active``）：hold 住增量 SkillEdit，让 candidates
+        攒满整个 epoch；直到算法落屏障 sentinel → 用 ``flush_threshold`` 一次性
+        批量毕业所有有候选的 skill，然后消费屏障（epoch 计数 +1，跑满即转在线）。
+        非冷启动（默认/已转在线）：走正常阈值在线增量。
+        """
+        cs = self._cold_start
+        if cs.active:
+            if cs.barrier_reached():
+                logger.info(
+                    "冷启动 epoch 屏障到达 → 批量 flush SkillEdit (flush_threshold=%d)",
+                    cs.flush_threshold,
+                )
+                self._check_pending_skill_edits(
+                    threshold=cs.flush_threshold, cold_flush=True)
+                cs.consume_barrier()
+            # 屏障未到：hold，本轮不写正文（让 atom 继续攒进 candidates）
+            return
+        self._check_pending_skill_edits()
+
+    def _check_pending_skill_edits(self, threshold=None, cold_flush=False):
         """遍历每个 skill 目录调 SkillEditAgent.maybe_run()。
+
+        ``threshold``：None 时各 skill 用默认 ATOM_PROMOTION_THRESHOLD（在线增量）；
+        冷启动屏障 flush 传入低门槛（如 1）→ 任何有候选的 skill 都批量毕业。
+
+        ``cold_flush``：冷启动 epoch 屏障 flush 时传 True，透传给 SkillEditAgent。
+        作用：main 上的技能跳过 ux_score 守门、基于新 candidates 原地重精炼并
+        直接 commit 回 main（在线进化），不开 staging / 不走灰度。
 
         独立于 process_atom_task：不依赖任何 atom 处理成功；只看 candidates.yml
         当前累计 weightscore 是否够阈值。即便某次 cluster 抛异常导致 buffer
@@ -278,20 +314,27 @@ class DirectoryWatcher:
             return
         from xskill.agents.skill_edit_agent import SkillEditAgent
         factory = self._factory()
-        # store 选哪个：edit agent 工具 (atom_task_read/read_traj) 需要
-        # store + traj_root 来工作；从已注册的第一个 wd 取（生产环境通常
-        # 只有 cc_sessions 一个有 atom 的 dir）。
-        store = None
-        traj_root = None
+        # store 选哪个：edit agent 工具 (atom_task_read/read_traj) 需要 store +
+        # traj_root 才能读到 atom 原文。单机只有一个 watch_dir（cc_sessions）。
+        # team-CS server 下有 N 个 watch_dir（每个 client 上传轨迹注册成一个 wd，
+        # label=client_id），某 skill 的 candidates 里的 atom 可能来自任意 client
+        # 的 store——只绑第一个 wd 的 store，跨 client 的 atom 必然 not found。
+        # 因此收集所有 wd 的 store：>1 个时包一层 MultiAtomTaskStore 做跨 store
+        # 路由；单个时直接用它（单机/cold_flush 行为零变化）。
+        stores = []
         for wd in list_watch_dirs(**self._db_kw()):
             try:
-                store = self._store_for(Path(wd["path"]))
-                traj_root = Path(wd["path"])
-                break
+                stores.append(self._store_for(Path(wd["path"])))
             except Exception:
                 continue
-        if store is None:
+        if not stores:
             return
+        if len(stores) == 1:
+            store = stores[0]
+        else:
+            from xskill.pipeline.atom import MultiAtomTaskStore
+            store = MultiAtomTaskStore(stores)
+        traj_root = Path(stores[0].root)
         # 初始化 v2 工具 ctx（SkillEditAgent 工具用）
         from xskill.agents import skill_tools as ST
         ST.init_context_v2(
@@ -331,6 +374,8 @@ class DirectoryWatcher:
                 agno_agent_factory=factory,
                 llm_cfg=self.config.get("llm", {}),
                 traj_root=traj_root,
+                cold_flush=cold_flush,
+                **({} if threshold is None else {"threshold": threshold}),
             )
             try:
                 return d, bool(editor.maybe_run())
