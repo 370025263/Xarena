@@ -38,6 +38,7 @@ COPY config.yaml /app/config.yaml
 COPY train_split/ /app/train_split/
 COPY _ctx/sync_skills_to.sh /app/sync_skills_to.sh
 COPY entrypoint_train.sh /app/entrypoint_train.sh
+COPY multi_turn_rollout.py /app/multi_turn_rollout.py
 RUN chmod +x /app/entrypoint_train.sh /app/sync_skills_to.sh \
     && : > /app/empty_skill.md
 
