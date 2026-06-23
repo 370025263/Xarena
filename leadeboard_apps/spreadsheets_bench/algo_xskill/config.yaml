@@ -41,15 +41,20 @@ skill_edit_agent:
   timeout_seconds:     600
   read_file_max_bytes: 15000
 
-# ===== Canary（main->staging 灰度）：关掉。reduced 规模无 UX 评分，灰度链路
-# 用不上，且我们只要 baby->main 的真实蒸馏 SKILL.md。 =====
+# ===== Canary（main->staging 灰度）：team-CS 在线进化模式开启并调低门槛。 =====
+# epoch1.. team-CS：worker 作为 distinct client 上传解题轨迹，server 端 CS 归因
+# 给 atom 按 side 打 ux_score；main 有分后 SkillEdit 把已有技能的更新路由到
+# commit_to_staging 开灰度分支，check_and_decide 在样本够时 promote/discard。
+# 小数据下必须调低（否则永远凑不够样本）：probability=0.5 让 ~50% 流量进 staging，
+# min_samples/total_samples=2 让 2 条样本就能决策，scope_top_n=1。
+# 注：entrypoint_train.sh 渲染时还会再覆盖这段（双保险），见 1a) 段。
 canary:
-  enabled:       false
-  probability:   0.0
-  min_samples:   1
+  enabled:       true
+  probability:   0.5
+  min_samples:   2
   max_days_hold: 14
-  rotate_interval: 300
-  scope_top_n:   2
+  rotate_interval: 60
+  scope_top_n:   1
   total_samples: 2
 
 # ===== description 触发优化：commit 时跑一次 hill-climb 调 frontmatter。短跑
