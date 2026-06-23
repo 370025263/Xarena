@@ -315,35 +315,45 @@ def _gold_positions() -> Dict[str, str]:
     return pos
 
 
-def _result_summary(content: Any, limit: int = 200) -> str:
-    """tool_result.content 可能是 str 或 [ {type:text,text:..}, .. ]，取前若干字符摘要。"""
+def _result_summary(content: Any, limit: Optional[int] = None) -> str:
+    """tool_result.content → 字符串。limit=None（默认）全量保留，不截断。
+
+    全量存储是安全的：Flask 无 MAX_CONTENT_LENGTH、backend extra_json 是 sqlite TEXT
+    （无大小上限）、评测 POST 走 k8s 内网 leaderboard-api-svc:80 不过 nginx。因此工具
+    结果默认完整记录，前端 result-view 能看到真值（如算法读到的完整注入 skill 正文）。"""
     if isinstance(content, str):
-        return content[:limit]
-    if isinstance(content, list):
-        parts = []
-        for blk in content:
-            if isinstance(blk, dict):
-                parts.append(str(blk.get("text") or blk.get("content") or ""))
-            else:
-                parts.append(str(blk))
-        return (" ".join(p for p in parts if p))[:limit]
-    if content is None:
+        s = content
+    elif isinstance(content, list):
+        s = " ".join(
+            p for p in (
+                (str(blk.get("text") or blk.get("content") or "")
+                 if isinstance(blk, dict) else str(blk))
+                for blk in content
+            ) if p
+        )
+    elif content is None:
         return ""
-    return str(content)[:limit]
+    else:
+        s = str(content)
+    return s if limit is None else s[:limit]
 
 
-def _input_repr(inp: Any, limit: int = 300) -> str:
-    """tool_use.input 的紧凑表示（key=val），截断。"""
+def _input_repr(inp: Any, limit: Optional[int] = None) -> str:
+    """tool_use.input 的紧凑表示（key=val）。limit=None 全量。"""
     if isinstance(inp, dict):
         try:
-            return json.dumps(inp, ensure_ascii=False)[:limit]
+            s = json.dumps(inp, ensure_ascii=False)
         except Exception:
-            return str(inp)[:limit]
-    return str(inp)[:limit] if inp is not None else ""
+            s = str(inp)
+    elif inp is not None:
+        s = str(inp)
+    else:
+        return ""
+    return s if limit is None else s[:limit]
 
 
 def _tool_trajectory_for_task(out_dir: str, sid: Optional[str], task_id: str,
-                              max_steps: int = 40) -> List[Dict[str, Any]]:
+                              max_steps: int = 500) -> List[Dict[str, Any]]:
     """
     解析 claude 会话 jsonl，抽取按时序排列的工具调用轨迹（single 模式才有）。
 
@@ -410,7 +420,7 @@ def _tool_trajectory_for_task(out_dir: str, sid: Optional[str], task_id: str,
                     elif bt == "text":
                         txt = str(blk.get("text") or "").strip()
                         if txt:
-                            steps.append({"kind": "text", "text": txt[:500]})
+                            steps.append({"kind": "text", "text": txt})
                     if len(steps) >= max_steps:
                         return steps
         if steps:
