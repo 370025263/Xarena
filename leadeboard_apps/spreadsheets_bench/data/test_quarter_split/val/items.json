@@ -1,0 +1,154 @@
+[
+ {
+  "id": 52917,
+  "instruction": "I need to create a formula that can combine day, month, and year data from separate columns A, B, and C into a complete date format in column J, as shown in my attached  file.",
+  "spreadsheet_path": "spreadsheet/52917",
+  "instruction_type": "Cell-Level Manipulation",
+  "answer_position": "J2:J9"
+ },
+ {
+  "id": 51354,
+  "instruction": "How can I extract the month and year from the last 6 characters of text strings in column A, when there isn't always a ' - ' preceding the date, and then add one month to it in Excel? For example, I need to convert 'Monthly ISEA Progress Report - Oct 21' to 'Nov 21'. The challenge is that Excel doesn't recognize the 'Oct 21' format as a date using the DATE function. Additionally, how can I extract just the 'Oct' part given that the date is always at the end of the text string, and then input it into a formula to display the result as 'MMM YY' with the month incremented by one?\n My current formula is: RIGHT(B5,LEN(B5)-FIND(\"_\",B5)) \nPlease have the solution output in column E. Please keep column D with just number 21. Also use the #FFC000 color in column D.",
+  "spreadsheet_path": "spreadsheet/51354",
+  "instruction_type": "Cell-Level Manipulation",
+  "answer_position": "E2:E6"
+ },
+ {
+  "id": 59129,
+  "instruction": "How can I adjust the SUMPRODUCT formula to calculate month over month headcount in Excel, so it does not continue to count employees who have been terminated?     My current formula is:                  SUMPRODUCT(--(MONTH(YEAR($A$2:$A$22)>=E1))*(--(MONTH(YEAR($B2:$B$22)>=E1))))",
+  "spreadsheet_path": "spreadsheet/59129",
+  "instruction_type": "Cell-Level Manipulation",
+  "answer_position": "E2:P2"
+ },
+ {
+  "id": "209-30",
+  "instruction": "I have an Excel VBA issue where I'm trying to remove the last three characters from each postcode in a column, and the number of rows can range from 1 to 500,000. My current code is erroneously changing every value in the column to FALSE instead of removing the characters. Here's the code I'm using: Sub RemoveChar()\n\nDim ws As Worksheet\nDim c As Range\nSet ws = Worksheets(\"Data to Import\")\n\nFor Each c In ws.Range(\"C2\", ws.Range(\"c\" & ws.Rows.Count).End(xlUp))\nc.Value = (\"C2\") = Left(ws.Range(\"C2\"), Len(ws.Range(\"C2\")) - 3)\n\nNext c\n\nEnd Sub Can anyone explain what I'm doing wrong with this code?",
+  "spreadsheet_path": "spreadsheet/209-30",
+  "instruction_type": "Sheet-Level Manipulation",
+  "answer_position": "'Data to Import'!C1:C6066",
+  "answer_sheet": "Data to Import",
+  "data_position": "C1:C6066 "
+ },
+ {
+  "id": 4714,
+  "instruction": "I need help with calculating a moving average for each employee listed in column A of my spreadsheet, specifically on a 4-monthly basis. I also want to identify any instances where the 4-monthly average exceeds 48. The process should be demonstrated manually in the provided snippet to show the expected results. In column D, show whole numbers when the decimal is zero. So 50 instead of 50.0.\n\nCount months of data for the same employee (column A) within a 4-month window (current month in column C plus 3 months prior. Display \"n/a\" if fewer than 4 months exist\nOtherwise, average the Hours (column D) for that employee within the 4-month rolling window",
+  "spreadsheet_path": "spreadsheet/4714",
+  "instruction_type": "Cell-Level Manipulation",
+  "answer_position": "E2:E25"
+ },
+ {
+  "id": 42216,
+  "instruction": "First add row for April in Group A, where only for that row, keep the cell blank if the value is 0. How can I transform the dataset from columns (Group A) to rows (Group B) in Excel, excluding values such as -9999 and 'M' which denote irrelevant data, and leaving NA values as blanks in Group B? For April, in Group B, assign 0s not blanks.\n   Note: \n   I want to convert columes (Data in group A) to row (Data in group B). Note: -9999 and M: indicate No Relevant Data and they can be dropped. NA: mean No Data and I want to leave as NA in group B. Other dates and Data are also required to be added in the same format as A20:A339 till 11/16/1951. and for blank values make them 0 while adding them in Group B Data and also only add Data where there are Dates.",
+  "spreadsheet_path": "spreadsheet/42216",
+  "instruction_type": "Cell-Level Manipulation",
+  "answer_position": "B20:B339"
+ },
+ {
+  "id": "577-40",
+  "instruction": "How can I delete entire rows in an Excel worksheet if both Column J and Column K are either blank or contain any of the following specific values: -, 0, $, $0, or $0.0? I need  solution other than formula or a VBA macro that performs this task without deleting rows where only one of the cells in Column J or K meets these criteria, as I need to retain rows where at least one of these columns contains actual data.",
+  "spreadsheet_path": "spreadsheet/577-40",
+  "instruction_type": "Sheet-Level Manipulation",
+  "answer_position": "'Sheet2'!A1:K54",
+  "answer_sheet": "Sheet2",
+  "data_position": "A1:K54"
+ },
+ {
+  "id": 37086,
+  "instruction": "I need a formula for a column named 'Total' where, if a value in column1 is 'A', it should add 10, but if the value is 'B', it should subtract 10. I have included a file that may help illustrate this.",
+  "spreadsheet_path": "spreadsheet/37086",
+  "instruction_type": "Cell-Level Manipulation",
+  "answer_position": "D2:D5"
+ },
+ {
+  "id": "84-40",
+  "instruction": "I need to sum the amounts in the entire columns C and D for each sheet, excluding column B, in an Excel workbook. These sums should then be populated in a 'list' sheet, putting the names of the sheets into column B. For each sheet, column C in list tab should contain the total from the original sheet's column C, and column D in list tab should contain the total from the original sheet's column D. Additionally, column E in the 'list' sheet should show the result of subtracting the amount in column D from the amount in column C. I also want a total row at the end that sums the amounts from all these sheets. Whenever I add new sheets before the 'list' sheet, I need the existing data in the 'list' sheet to be cleared so that the list can be updated to reflect any changes in the other sheets. I've provided an attachment for reference.",
+  "spreadsheet_path": "spreadsheet/84-40",
+  "instruction_type": "Sheet-Level Manipulation",
+  "answer_position": "'LIST'!C2:E5",
+  "answer_sheet": "LIST",
+  "data_position": "CA!'A1:D16,'MN!'A1:D16,'SDFRT!'A1:D6,'LIST!'A1:E6"
+ },
+ {
+  "id": 56427,
+  "instruction": "How can I transpose the values in column G where column B has the value 1 and pull sequential values from consecutive rows in column G, stopping after the number of runners specified in column C? The formula should preserve blanks as blanks (not zeros). An example dataset has been provided where the transposition was done partially, but I'm seeking a formulaic solution that will provide the full result. Once complete, shade the range H2:S28 in #E2EFD, and remove decimals for any whole values that range. Then center align all cells to the right of column G.",
+  "spreadsheet_path": "spreadsheet/56427",
+  "instruction_type": "Cell-Level Manipulation",
+  "answer_position": "H2:S28"
+ },
+ {
+  "id": "290-1",
+  "instruction": "I have a data set that is currently manually transposed in columns K to V, and I would like a macro to automate this process for data that will likely span around 2,000 rows. The relevant data is evidenced in the file that I have attached. I have given some examples in the answer attachment, please help me complete the rest of the answer. Note the position correspondence. Don't change any formatting",
+  "spreadsheet_path": "spreadsheet/290-1",
+  "instruction_type": "Sheet-Level Manipulation",
+  "answer_position": "K2:U10",
+  "answer_sheet": "Sheet1",
+  "data_position": "A1:I23"
+ },
+ {
+  "id": 55977,
+  "instruction": "Replace the data in Columns B:C where Monday is to be represented as day 1 and Sunday as day 7 in column B, and Column C is the actual day of the week corresponding to the Date in Column A. Despite setting Monday as day 1 in the calendar, Excel might be defaulting to Sunday as day 1 for some reason. Even trying to change the format to 'DDD' hasn't yielded the right results. The INDEX solution provided seems to solve the problem, but I'm still unsure about the reason why the WEEKDAY function isn't performing as expected. Do not change any formatting.",
+  "spreadsheet_path": "spreadsheet/55977",
+  "instruction_type": "Cell-Level Manipulation",
+  "answer_position": "C2:C16"
+ },
+ {
+  "id": "374-18",
+  "instruction": "I attempted to write a macro to delete all rows in Column E of the 'Imported Data' sheet that have values less than 1, but I received a compile error (\"End If without Block If\"). Please correct and test the code so it runs successfully without adding or removing any sheets or columns, and ensure it efficiently deletes all rows in Column E where the value is < 1 while keeping the header intact. The macro should execute directly on the 'Imported Data' sheet.",
+  "spreadsheet_path": "spreadsheet/374-18",
+  "instruction_type": "Sheet-Level Manipulation",
+  "answer_position": "'Sheet1'!A2:G6",
+  "answer_sheet": "Sheet1",
+  "data_position": "A1:G6"
+ },
+ {
+  "id": 47798,
+  "instruction": "How can I extract the collection name from cells where the 'Collection-' tag is placed at different positions within the text? Specifically, I am looking to capture the text immediately following 'Collection-' up to either the first comma or the end of the data in each cell, bearing in mind that the 'Collection-' tag appears only once in each cell.",
+  "spreadsheet_path": "spreadsheet/47798",
+  "instruction_type": "Cell-Level Manipulation",
+  "answer_position": "B2:B7"
+ },
+ {
+  "id": 51359,
+  "instruction": "How can I calculate the total of all consecutive 1's in a column in Excel, where only the groups of adjacent cells with a sum of 2 or more should be counted?",
+  "spreadsheet_path": "spreadsheet/51359",
+  "instruction_type": "Cell-Level Manipulation",
+  "answer_position": "B15:E15"
+ },
+ {
+  "id": "188-39",
+  "instruction": "How can I update a result sheet in Excel to display the designation, contact details, and email of a person when their designation matches either 'Branch Manager' or 'Branch Credit Manager' for a given location, while marking cells with 'N/A' if the designation is different? The data to be matched comes from a main sheet containing fields such as name, contact number, mail ID, and designation. The result is required in a structured format where the person's name is listed against their location, accompanied by contact details and mail ID if the designation criteria is met.  Left align all outputed entries.",
+  "spreadsheet_path": "spreadsheet/188-39",
+  "instruction_type": "Sheet-Level Manipulation",
+  "answer_position": "'result'!B2:D12",
+  "answer_sheet": "result",
+  "data_position": "main!'A1: E12, 'result!'A1: D12'"
+ },
+ {
+  "id": 54196,
+  "instruction": "I'm struggling with a VLOOKUP function that seems to be failing. I aim to use this function to retrieve the lead time for items based on supplier IDs and item numbers. Despite trying to normalize the numbers and using both the VLOOKUP and INDEX MATCH functions, as well as trying in a different file, I'm unable to get it to work. I'm not sure what's causing the problem and urgently need to understand why this issue persists. If I can't resolve this for my university project, I risk not passing, which could have severe consequences for my studies. Can someone help me to fix this error?\nI try VLOOKUP(G2,Suppliers2,2,FALSE).\n\nHelp me populate Column E in Sheet two by matching the value in column G with column B and returning the value in column C. Everything referenced is in Sheet two. Columns B:E are part of a table that's a different length from F:G. Fill Column E to be the same length as the last row of the table from B:E",
+  "spreadsheet_path": "spreadsheet/54196",
+  "instruction_type": "Cell-Level Manipulation",
+  "answer_position": "'Sheet two'!E2:E279"
+ },
+ {
+  "id": 33722,
+  "instruction": "How can I calculate the median market capitalization for a set of companies that fall within a specific percentile range (0 to 1%), using a formula in Excel that allows me to dynamically change the percentile range? The output should be in E2:E6 and each time the formula is used in the next row, the previous rows above it are excluded from the selection. The data is in col B and C. Format col E with borders, align left, no decimals, no commas for all associated rows.",
+  "spreadsheet_path": "spreadsheet/33722",
+  "instruction_type": "Cell-Level Manipulation",
+  "answer_position": "E2:E6"
+ },
+ {
+  "id": 54675,
+  "instruction": "How can I modify my Excel formula in cell F3 so it counts all occurrences of the name 'Gary Stoddard' in column B, including those that appear in a cell with other names, as long as column A contains the number '4'? COUNTIFS(B:B,\"Gary Stoddard\",A:A,\"4\")",
+  "spreadsheet_path": "spreadsheet/54675",
+  "instruction_type": "Cell-Level Manipulation",
+  "answer_position": "F3"
+ },
+ {
+  "id": 45937,
+  "instruction": "How can I create a formula in Excel that automatically calculates the percentage category based on a range of values in another cell? The user has a legend with categories and corresponding percentages in rows H17 to N22, and wants to determine the category for a value in cell E7, based on the value in D7 which is already using a formula related to the category legend in H6 to I11. Note that the kms ranges are specified in cells H20:I22. Finish the table by completing column E.",
+  "spreadsheet_path": "spreadsheet/45937",
+  "instruction_type": "Cell-Level Manipulation",
+  "answer_position": "E7:E9"
+ }
+]
