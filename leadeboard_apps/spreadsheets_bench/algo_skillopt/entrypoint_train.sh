@@ -3,7 +3,7 @@ set -uo pipefail
 SKILL_OUT="${SKILL_DIR:-/shared/skill}"; mkdir -p "$SKILL_OUT"
 KEY="${DEEPSEEK_API_KEY:?}"; ENDPOINT="${TARGET_ENDPOINT:-https://api.deepseek.com}"; MODEL="${EVAL_MODEL:-deepseek-v4-flash}"
 RUN=/tmp/run; rm -rf "$RUN"
-if [ "${TRAIN_SCALE:-reduced}" = "full" ]; then SPLIT=/app/full_split; EOPT=""; TS=80; else SPLIT=/app/train_split; EOPT="train.num_epochs=1"; TS=6; fi
+if [ "${TRAIN_SCALE:-reduced}" = "full" ]; then SPLIT=/app/full_split; EOPT=""; TS=80; else SPLIT=/app/train_split; EOPT="train.num_epochs=${SKILLOPT_EPOCHS:-4}"; TS="${SKILLOPT_TRAIN_SIZE:-20}"; fi
 cd /app/SkillOpt
 python scripts/train.py --config configs/spreadsheetbench/default.yaml \
   --optimizer_backend openai_chat --target_backend openai_chat \
